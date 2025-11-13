@@ -40,6 +40,7 @@ export default function App() {
     googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY,
   });
 
+
   /* ---------------- BACKEND REQUEST ---------------- */
   const fetchRoute = useCallback(async () => {
     if (!origin || !destination) return;
