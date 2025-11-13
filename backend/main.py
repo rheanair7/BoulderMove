@@ -6,10 +6,10 @@ from dotenv import load_dotenv
 load_dotenv()
 app = FastAPI()
 
-# --- CORS for local React frontend ---
+# --- CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For local dev; restrict in prod
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -17,16 +17,18 @@ app.add_middleware(
 
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
+
 @app.get("/")
 def home():
     return {"message": "Trip Planner API is running!"}
 
+
 @app.get("/plan")
 def plan_trip(
-    origin: str = Query(..., description="Starting location"),
-    destination: str = Query(..., description="Destination"),
-    stops: str = Query("", description="Comma-separated intermediate stops"),
-    mode: str = Query("driving", description="driving | transit | walking | bicycling")
+    origin: str = Query(...),
+    destination: str = Query(...),
+    stops: str = Query(""),
+    mode: str = Query("driving")
 ):
     valid_modes = ["driving", "transit", "walking", "bicycling"]
     if mode not in valid_modes:
@@ -34,14 +36,16 @@ def plan_trip(
 
     print(f"[DEBUG] origin={origin}, destination={destination}, stops={stops}, mode={mode}")
 
-    # ---- Build waypoints ----
+    # ---- Parse stops ----
     stops_list = [s.strip() for s in stops.split(",") if s.strip()]
+
+    # Transit waypoint limit
     if mode == "transit" and len(stops_list) > 2:
-        print("[WARN] Transit mode supports only 2 waypoints; truncating.")
         stops_list = stops_list[:2]
+
     waypoints = "|".join(stops_list) if stops_list else None
 
-    # ---- Request to Google Directions API ----
+    # ---- Google Directions request ----
     params = {
         "origin": origin,
         "destination": destination,
@@ -52,31 +56,45 @@ def plan_trip(
         params["waypoints"] = waypoints
 
     url = "https://maps.googleapis.com/maps/api/directions/json"
-    print(f"[DEBUG] Sending request to Google Maps: {params}")
     resp = requests.get(url, params=params)
     data = resp.json()
 
+    # Handle API Errors
     if "error_message" in data:
-        print(f"[ERROR] Google API Error: {data['error_message']}")
+        print("[GOOGLE ERROR]", data["error_message"])
 
-    # ---- Parse routes ----
+    # ---- Parse Routes ----
     routes = []
     for route in data.get("routes", []):
         legs = route.get("legs", [])
+
+        # Start & End locations
+        start_loc = legs[0]["start_location"] if legs else None
+        end_loc = legs[-1]["end_location"] if legs else None
+
+        # Extract waypoint locations (if any)
+        waypoint_locs = []
+        for leg in legs[:-1]:  # all legs except final
+            waypoint_locs.append(leg["end_location"])
+
+        # Totals
         total_duration = sum(leg["duration"]["value"] for leg in legs)
         total_distance = sum(leg["distance"]["value"] for leg in legs)
-        poly = route.get("overview_polyline", {}).get("points", "")
 
-        route_info = {
+        # Build response object
+        routes.append({
             "summary": route.get("summary", "Unnamed Route"),
             "duration_min": round(total_duration / 60, 1),
             "distance_km": round(total_distance / 1000, 2),
-            "polyline": poly,               # ✅ Added for map rendering
+            "polyline": route.get("overview_polyline", {}).get("points", ""),
             "mode": mode,
-            "stops": stops_list
-        }
-        routes.append(route_info)
-        print(f"[DEBUG] Added route: {route_info['summary']} ({mode})")
 
-    print(f"[DEBUG] Returning {len(routes)} route(s)")
+            # NEW → For markers
+            "start_location": start_loc,
+            "end_location": end_loc,
+            "waypoint_locations": waypoint_locs,
+
+            "stops": stops_list,
+        })
+
     return {"routes": routes, "mode": mode}

@@ -81,33 +81,30 @@ export default function App() {
 
   /* -------- BUILD MARKERS ORDERED A → B → C... -------- */
   const buildMarkers = () => {
-    if (routes.length === 0) return [];
-    const legs = routes[0].legs || [];
-    if (legs.length === 0) return [];
+  if (routes.length === 0) return [];
 
-    const markers = [];
+  const r = routes[0];
+  const markers = [];
 
-    // A = origin
-    markers.push({
-      position: {
-        lat: legs[0].start_location.lat,
-        lng: legs[0].start_location.lng,
-      },
-    });
+  // A — start
+  if (r.start_location) {
+    markers.push({ position: r.start_location });
+  }
 
-    // B, C, D ... = stops + destination
-    for (let i = 0; i < legs.length; i++) {
-      markers.push({
-        position: {
-          lat: legs[i].end_location.lat,
-          lng: legs[i].end_location.lng,
-        },
-      });
-    }
+  // B, C, D — stops
+  if (r.waypoint_locations) {
+    r.waypoint_locations.forEach((wp) =>
+      markers.push({ position: wp })
+    );
+  }
 
-    return markers;
-  };
+  // Last — destination
+  if (r.end_location) {
+    markers.push({ position: r.end_location });
+  }
 
+  return markers;
+};
   /* Fit map to bounds */
   useEffect(() => {
     if (!isLoaded || !mapRef.current || decodedRoutes.length === 0) return;
@@ -203,12 +200,11 @@ export default function App() {
               />
             ))}
 
-            {/* A → B → C → ... Markers */}
             {buildMarkers().map((m, index) => (
               <Marker
                 key={index}
                 position={m.position}
-                label={String.fromCharCode(65 + index)}
+                label={String.fromCharCode(65 + index)} // A, B, C, D
               />
             ))}
           </GoogleMap>
