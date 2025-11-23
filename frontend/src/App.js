@@ -26,12 +26,13 @@ const mapOptions = {
 
 /* ---------------- MAIN COMPONENT ---------------- */
 export default function App() {
-  const [origin, setOrigin] = useState("Boca Raton, FL");
+  const [origin, setOrigin] = useState("norlin library");
   const [destination, setDestination] = useState("Denver, CO");
   const [stops, setStops] = useState(""); // semicolon-separated
   const [mode, setMode] = useState("driving");
   const [showAlternatives, setShowAlternatives] = useState(false);
   const [routes, setRoutes] = useState([]);
+  const [showWeatherDetails, setShowWeatherDetails] = useState(false);
 
   const mapRef = useRef(null);
 
@@ -39,7 +40,6 @@ export default function App() {
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY,
   });
-
 
   /* ---------------- BACKEND REQUEST ---------------- */
   const fetchRoute = useCallback(async () => {
@@ -81,30 +81,29 @@ export default function App() {
 
   /* -------- BUILD MARKERS ORDERED A → B → C... -------- */
   const buildMarkers = () => {
-  if (routes.length === 0) return [];
+    if (routes.length === 0) return [];
 
-  const r = routes[0];
-  const markers = [];
+    const r = routes[0];
+    const markers = [];
 
-  // A — start
-  if (r.start_location) {
-    markers.push({ position: r.start_location });
-  }
+    // A — start
+    if (r.start_location) {
+      markers.push({ position: r.start_location });
+    }
 
-  // B, C, D — stops
-  if (r.waypoint_locations) {
-    r.waypoint_locations.forEach((wp) =>
-      markers.push({ position: wp })
-    );
-  }
+    // B, C, D — stops
+    if (r.waypoint_locations) {
+      r.waypoint_locations.forEach((wp) => markers.push({ position: wp }));
+    }
 
-  // Last — destination
-  if (r.end_location) {
-    markers.push({ position: r.end_location });
-  }
+    // Last — destination
+    if (r.end_location) {
+      markers.push({ position: r.end_location });
+    }
 
-  return markers;
-};
+    return markers;
+  };
+
   /* Fit map to bounds */
   useEffect(() => {
     if (!isLoaded || !mapRef.current || decodedRoutes.length === 0) return;
@@ -115,9 +114,21 @@ export default function App() {
 
   /* ---------------- UI ---------------- */
   return (
-    <div style={{ margin: "30px auto", maxWidth: "1150px", fontFamily: "Inter" }}>
-      <h1 style={{ fontSize: "32px", fontWeight: 700, marginBottom: "20px" }}>
-        🧭 Smart Trip Planner
+    <div
+      style={{
+        margin: "30px auto",
+        maxWidth: "1150px",
+        fontFamily: "Inter",
+      }}
+    >
+      <h1
+        style={{
+          fontSize: "32px",
+          fontWeight: 700,
+          marginBottom: "20px",
+        }}
+      >
+        🚌 Smart Trip Planner
       </h1>
 
       {/* INPUT CARD */}
@@ -166,7 +177,9 @@ export default function App() {
           <option value="transit">🚌 Transit</option>
         </select>
 
-        <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        <label
+          style={{ display: "flex", alignItems: "center", gap: "6px" }}
+        >
           <input
             type="checkbox"
             checked={showAlternatives}
@@ -193,7 +206,9 @@ export default function App() {
                 key={i}
                 path={path}
                 options={{
-                  strokeColor: ["#4285F4", "#FF6347", "#2ECC71", "#8E44AD"][i % 4],
+                  strokeColor: ["#4285F4", "#FF6347", "#2ECC71", "#8E44AD"][
+                    i % 4
+                  ],
                   strokeWeight: i === 0 ? 6 : 4,
                   strokeOpacity: i === 0 ? 1 : 0.7,
                 }}
@@ -215,17 +230,83 @@ export default function App() {
         )}
       </div>
 
-      {/* ROUTE SUMMARY */}
+      {/* ROUTE SUMMARY + WEATHER + ALERTS */}
       {routes.length > 0 && (
         <div style={{ marginTop: "20px", fontSize: "16px" }}>
+          {/* Toggle button for weather details */}
+          <button
+            onClick={() => setShowWeatherDetails((prev) => !prev)}
+            style={{
+              marginBottom: "12px",
+              padding: "8px 12px",
+              borderRadius: "8px",
+              border: "1px solid #ccc",
+              background: "#f7f7f7",
+              cursor: "pointer",
+            }}
+          >
+            {showWeatherDetails ? "Hide today’s weather" : "Show today’s weather"}
+          </button>
+
           {routes.map((r, i) => (
-            <div key={i} style={{ marginBottom: "12px" }}>
-              <b style={{ color: ["#4285F4", "#FF6347", "#2ECC71", "#8E44AD"][i % 4] }}>
+            <div
+              key={i}
+              style={{
+                marginBottom: "12px",
+                padding: "10px 12px",
+                borderRadius: "10px",
+                border: "1px solid #ddd",
+                background: "#fafafa",
+              }}
+            >
+              <b
+                style={{
+                  color: ["#4285F4", "#FF6347", "#2ECC71", "#8E44AD"][i % 4],
+                }}
+              >
                 Route {String.fromCharCode(65 + i)} — {r.summary}
               </b>
-              <div>{r.duration_min} min • {r.distance_km} km</div>
-              <div style={{ color: "#666" }}>Stops: {r.stops?.join(" → ") || "None"}</div>
+
+              <div>
+                {r.duration_min} min • {r.distance_km} km
+              </div>
+
+              <div style={{ color: "#666" }}>
+                Stops: {r.stops?.join(" → ") || "None"}
+              </div>
+
               <div style={{ color: "#666" }}>Mode: {mode}</div>
+
+              {/* Weather summary per route (today / current) */}
+              {showWeatherDetails && (
+                <div
+                  style={{
+                    marginTop: "6px",
+                    fontSize: "14px",
+                    color: "#444",
+                  }}
+                >
+                  {r.weather ? (
+                    <>
+                      <div>
+                        <strong>Weather at start (today):</strong>{" "}
+                        {r.weather.temp} °C,{" "}
+                        {r.weather.weather_main} ({r.weather.weather_desc})
+                      </div>
+                      <div style={{ marginTop: "2px" }}>
+                        Feels like: {r.weather.feels_like} °C • Humidity:{" "}
+                        {r.weather.humidity}% • Wind: {r.weather.wind_speed} m/s
+                      </div>
+                    </>
+                  ) : (
+                    <div>Weather data unavailable for this route.</div>
+                  )}
+                </div>
+              )}
+
+
+              {/* Custom weather alerts per route */}
+              {r.alerts && renderAlerts(r.alerts.custom_alerts)}
             </div>
           ))}
         </div>
@@ -233,6 +314,48 @@ export default function App() {
     </div>
   );
 }
+
+/* -------- Alerts helper -------- */
+const severityColors = {
+  high: "#ffe5e5",
+  medium: "#fff5d6",
+  low: "#e5ffe5",
+};
+
+const renderAlerts = (alerts) => {
+  if (!alerts || alerts.length === 0) {
+    return (
+      <div style={{ marginTop: "4px", fontSize: "14px", color: "#555" }}>
+        No weather alerts for this route.
+      </div>
+    );
+  }
+
+  return alerts.map((a, idx) => (
+    <div
+      key={idx}
+      style={{
+        marginTop: "6px",
+        padding: "8px 10px",
+        borderRadius: "8px",
+        border: "1px solid #ddd",
+        backgroundColor: severityColors[a.severity] || "#f5f5f5",
+      }}
+    >
+      <strong>{a.title}</strong>
+      <div style={{ fontSize: "14px", marginTop: "2px" }}>{a.message}</div>
+      <div
+        style={{
+          fontSize: "12px",
+          color: "#777",
+          marginTop: "2px",
+        }}
+      >
+        Severity: {a.severity}
+      </div>
+    </div>
+  ));
+};
 
 /* -------- Shared Styles -------- */
 const inputStyle = {
