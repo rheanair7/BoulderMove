@@ -40,7 +40,10 @@ export default function App() {
   const originAutoRef = useRef(null);
   const destAutoRef = useRef(null);
   const stopsAutoRef = useRef(null);
-
+  
+  const clearOldRoute = () => {
+    setRoutes([]);   // wipe previous displayed route
+  };
   /* Load Google Maps API */
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY,
@@ -64,10 +67,12 @@ export default function App() {
       );
     }
   };
-
+  
   /* ---------------- BACKEND REQUEST ---------------- */
   const fetchRoute = useCallback(async () => {
+    
     if (!origin || !destination) return;
+    clearOldRoute();
     const url = `http://127.0.0.1:8000/plan?origin=${encodeURIComponent(
       origin
     )}&destination=${encodeURIComponent(
@@ -252,7 +257,7 @@ export default function App() {
               cursor: "pointer",
             }}
           >
-            {showWeatherDetails ? "Hide today’s weather" : "Show today’s weather"}
+            {showWeatherDetails ? "Hide today's weather" : "Show today's weather"}
           </button>
 
           {routes.map((r, i) => (
