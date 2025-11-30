@@ -137,4 +137,18 @@ def events_near_route(polyline_points, max_dist_m=1500):
             continue
 
     print(f"[DEBUG] Found {len(final_events)} events along route")
-    return final_events
+
+    return {
+        "count": len(final_events),
+        "events": [
+            {
+                "name": ev["name"],
+                "venue_name": ev["venue_name"],
+                "date_time": ev["date_time"],
+                "url": ev["url"],
+                "source": ev["source"],
+                "distance_from_route_m": ev.get("distance_from_route_m"),
+            }
+            for ev in final_events
+        ],
+    }

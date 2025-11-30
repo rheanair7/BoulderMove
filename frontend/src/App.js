@@ -197,23 +197,6 @@ export default function App() {
     mapRef.current.fitBounds(bounds);
   }, [decodedRoutes, isLoaded]);
 
-  /* ---------------- SIMULATE EVENT ---------------- */
-  const simulateEvent = () => {
-    const simulatedEvent = {
-      title: "Simulated Test Event 🚨",
-      url: "https://ticketmaster.com",
-      start_time: new Date().toISOString(),
-      distance_from_route_m: 420,
-      venue: "Test Arena",
-      address: "123 Test Street",
-      capacity: 12000,
-    };
-    const updated = [...routes];
-    if (!updated[0].events_nearby) updated[0].events_nearby = [];
-    updated[0].events_nearby.push(simulatedEvent);
-    setRoutes(updated);
-    alert("⚠️ Simulated Ticketmaster event added!");
-  };
 
   /* ---------------- UI ---------------- */
   if (!isLoaded) {
@@ -380,14 +363,31 @@ export default function App() {
             </h2>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <Autocomplete
+                onLoad={(ref) => (originAutoRef.current = ref)}
+                onPlaceChanged={handleOriginSelect}
+              >
               <input
                 value={origin}
                 onChange={(e) => setOrigin(e.target.value)}
                 placeholder="Origin"
                 style={inputStyle}
               />
-
+              </Autocomplete>
+        
         {/* STOPS */}
+        {/* <Autocomplete
+          onLoad={(ref) => (originAutoRef.current = ref)}
+          onPlaceChanged={handleOriginSelect}
+        >
+          <input
+            value={origin}
+            onChange={(e) => setOrigin(e.target.value)}
+            placeholder="Origin"
+            style={inputStyle}
+          />
+        </Autocomplete> */}
+
         <Autocomplete
           onLoad={(ref) => (stopsAutoRef.current = ref)}
           onPlaceChanged={handleStopSelect}
@@ -688,6 +688,7 @@ function RouteCard({ route, index, mode, showWeatherDetails }) {
 
       {/* Alerts */}
       {route.alerts && renderAlerts(route.alerts.custom_alerts)}
+      {renderEvents(route.events_nearby)}
     </div>
   );
 }
@@ -726,26 +727,167 @@ const renderAlerts = (alerts) => {
 };
 
 /* -------- EVENTS (Ticketmaster version) -------- */
-const renderEvents = (events) => {
-  if (!events || events.length === 0) {
-    return <div style={{ marginTop: "4px", fontSize: "14px", color: "#555" }}>No events near this route.</div>;
+const renderEvents = (eventsWrapper) => {
+  // Normalize shape: array OR { count, events: [...] }
+  const rawEvents = Array.isArray(eventsWrapper)
+    ? eventsWrapper
+    : eventsWrapper?.events ?? [];
+
+  if (!rawEvents || rawEvents.length === 0) {
+    return (
+      <div style={{ marginTop: "4px", fontSize: "14px", color: "#555" }}>
+        No events near this route.
+      </div>
+    );
   }
-  return events.map((e, idx) => (
-    <div key={idx} style={{ marginTop: "10px", padding: "12px", borderRadius: "10px", border: "1px solid #cce0ff", backgroundColor: "#f0f6ff" }}>
-      <strong style={{ fontSize: "17px", color: "#0055cc" }}>{e.title}</strong>
-      {e.url && (
-        <div style={{ marginTop: "4px" }}>
-          <a href={e.url} target="_blank" rel="noreferrer" style={{ color: "#0066ff", textDecoration: "underline" }}>View Event →</a>
+
+  const now = new Date();
+  const groups = new Map();
+
+  for (const e of rawEvents) {
+    // ✅ Only keep events that actually have a URL
+    if (!e.url) continue;
+
+    const name = (e.name || e.title || "Untitled Event").trim();
+    const venue = (e.venue_name || e.venue || "").trim();
+    const timeStr = e.date_time || e.start_time || null;
+    const time = timeStr ? new Date(timeStr) : null;
+
+    // ✅ If we have a time and it is in the past, skip this occurrence
+    if (time && time < now) continue;
+
+    // If there is no time at all, you can either:
+    //  - skip it: if (!time) continue;
+    //  - or keep it grouped by an empty date string (current behavior below)
+    const dateStr = time ? time.toDateString() : "";
+
+    const key = `${name.toLowerCase()}::${venue.toLowerCase()}::${dateStr}`;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        base: e,
+        showtimes: [],
+      });
+    }
+
+    if (time) {
+      groups.get(key).showtimes.push(time);
+    }
+  }
+
+  // Convert map -> array and drop groups that ended up with no future showtimes
+  let groupedEvents = Array.from(groups.values()).filter(
+    ({ showtimes }) => showtimes.length > 0
+  );
+
+  if (groupedEvents.length === 0) {
+    return (
+      <div style={{ marginTop: "4px", fontSize: "14px", color: "#555" }}>
+        No upcoming ticketed events near this route.
+      </div>
+    );
+  }
+
+  return groupedEvents.map(({ base, showtimes }, idx) => (
+    <div
+      key={idx}
+      style={{
+        marginTop: "10px",
+        padding: "12px",
+        borderRadius: "10px",
+        border: "1px solid #cce0ff",
+        backgroundColor: "#f0f6ff",
+      }}
+    >
+      {/* Title */}
+      <strong style={{ fontSize: "16px", color: "#0055cc" }}>
+        {base.name || base.title || "Untitled Event"}
+      </strong>
+
+      {/* Link – guaranteed to exist because we filtered by url */}
+      <div style={{ marginTop: "4px" }}>
+        <a
+          href={base.url}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: "#0066ff", textDecoration: "underline" }}
+        >
+          View Event →
+        </a>
+      </div>
+
+      {/* Upcoming showtimes */}
+      {showtimes.length > 0 && (
+        <div
+          style={{ marginTop: "4px", fontSize: "13px", color: "#333" }}
+        >
+          {showtimes.length === 1 ? "Showtime:" : "Showtimes:"}{" "}
+          {showtimes.map((t) => t.toLocaleString()).join(" • ")}
         </div>
       )}
-      {e.start_time && <div style={{ marginTop: "4px", fontSize: "14px", color: "#444" }}>{new Date(e.start_time).toLocaleString()}</div>}
-      {e.distance_from_route_m && <div style={{ fontSize: "13px", color: "#777", marginTop: "3px" }}>{Math.round(e.distance_from_route_m)} m from route</div>}
-      {e.venue && <div style={{ fontSize: "13px", color: "#555", marginTop: "3px" }}>Venue: {e.venue}</div>}
-      {e.capacity && <div style={{ fontSize: "13px", color: "#333", marginTop: "3px" }}>Capacity: {e.capacity.toLocaleString()}</div>}
-      {e.address && <div style={{ fontSize: "12px", color: "#666", marginTop: "4px", fontStyle: "italic" }}>{e.address}</div>}
+
+      {/* Venue (Ticketmaster field) */}
+      {base.venue_name && (
+        <div style={{ fontSize: "13px", color: "#444" }}>
+          Venue: {base.venue_name}
+        </div>
+      )}
+
+      {/* Distance from route */}
+      {base.distance_from_route_m && (
+        <div
+          style={{
+            fontSize: "13px",
+            color: "#777",
+            marginTop: "3px",
+          }}
+        >
+          {Math.round(base.distance_from_route_m)} m from route
+        </div>
+      )}
+
+      {/* Fallback venue fields */}
+      {base.venue && (
+        <div
+          style={{
+            fontSize: "13px",
+            color: "#555",
+            marginTop: "3px",
+          }}
+        >
+          Venue: {base.venue}
+        </div>
+      )}
+
+      {base.capacity && (
+        <div
+          style={{
+            fontSize: "13px",
+            color: "#333",
+            marginTop: "3px",
+          }}
+        >
+          Capacity: {base.capacity.toLocaleString()}
+        </div>
+      )}
+
+      {base.address && (
+        <div
+          style={{
+            fontSize: "12px",
+            color: "#666",
+            marginTop: "4px",
+            fontStyle: "italic",
+          }}
+        >
+          {base.address}
+        </div>
+      )}
     </div>
   ));
 };
+
+
 
 /* -------- Shared input/select Styles -------- */
 const inputStyle = {
@@ -753,6 +895,13 @@ const inputStyle = {
   borderRadius: "8px",
   border: "1px solid #ccc",
   fontSize: "14px",
+};
+
+const inputStyleLarge = {
+  flex: 2,
+  padding: "12px",
+  borderRadius: "8px",
+  border: "1px solid #ccc",
 };
 
 const selectStyle = {
