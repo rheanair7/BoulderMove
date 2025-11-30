@@ -93,6 +93,21 @@ const severityColors = {
 
 /* ---------------- MAIN COMPONENT ---------------- */
 export default function App() {
+  // 🔹 Landing page state
+  const [showLanding, setShowLanding] = useState(true);
+  const [landingFadeOut, setLandingFadeOut] = useState(false);
+
+  const hideLanding = () => {
+    setLandingFadeOut(true);
+    setTimeout(() => setShowLanding(false), 600); // match fade duration
+  };
+
+  useEffect(() => {
+    const t = setTimeout(hideLanding, 2800); // auto-hide after ~2.8s
+    return () => clearTimeout(t);
+  }, []);
+
+  // 🔹 Existing app state
   const [origin, setOrigin] = useState("norlin library");
   const [destination, setDestination] = useState("Denver, CO");
   const [stops, setStops] = useState(""); // semicolon-separated
@@ -176,28 +191,149 @@ export default function App() {
 
   /* ---------------- UI ---------------- */
   return (
-    <div style={{ minHeight: "100vh", background: "#f5f5f8" }}>
-      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        {/* TOP BAR */}
-      <header style={topBarStyle}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 40, height: 40 }}>
-            <DotLottieReact
-              src="https://lottie.host/5a79cff1-423a-4aa6-824f-954dca862994/ezy8pcAi40.lottie"
-              loop
-              autoplay
-              style={{ width: "40px", height: "40px" }}
-            />
-          </div>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>
-            BoulderMove – Smart Trip Dashboard
-          </div>
-        </div>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f5f5f8",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* FULL-SCREEN LANDING OVERLAY */}
+      {showLanding && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background:
+              "radial-gradient(circle at top, #fdfbfb 0, #ebedee 40%, #dfe7fd 100%)",
+            opacity: landingFadeOut ? 0 : 1,
+            transform: landingFadeOut ? "scale(1.02)" : "scale(1)",
+            transition: "opacity 600ms ease, transform 600ms ease",
+          }}
+        >
+          <div
+            style={{
+              background: "rgba(255,255,255,0.95)",
+              borderRadius: "20px",
+              padding: "32px 40px",
+              boxShadow: "0 18px 60px rgba(15,23,42,0.18)",
+              maxWidth: "540px",
+              width: "90%",
+              display: "flex",
+              gap: 24,
+              alignItems: "center",
+            }}
+          >
+            <div style={{ width: 96, height: 96 }}>
+              <DotLottieReact
+                src="https://lottie.host/5a79cff1-423a-4aa6-824f-954dca862994/ezy8pcAi40.lottie"
+                loop
+                autoplay
+                style={{ width: "96px", height: "96px" }}
+              />
+            </div>
 
-        <div style={{ fontSize: 14, color: "#666" }}>
-          {new Date().toLocaleString()}
+            <div>
+              <h1
+                style={{
+                  margin: "0 0 8px",
+                  fontSize: "32px",
+                  fontWeight: 700,
+                }}
+              >
+                BoulderMove
+              </h1>
+              <p
+                style={{
+                  margin: "0 0 12px",
+                  fontSize: "15px",
+                  color: "#4b5563",
+                }}
+              >
+                Smart, weather-aware trip planning for Boulder and beyond.
+              </p>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  fontSize: "13px",
+                  marginBottom: 16,
+                  color: "#4b5563",
+                }}
+              >
+                <span>🚌 Transit + 🚶 walking</span>
+                <span>☁️ Live weather context</span>
+                <span>📊 Route insights</span>
+              </div>
+
+              <button
+                onClick={hideLanding}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: "999px",
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)",
+                  color: "white",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  boxShadow: "0 10px 30px rgba(37,99,235,0.35)",
+                }}
+              >
+                Enter BoulderMove
+              </button>
+
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: "12px",
+                  color: "#6b7280",
+                }}
+              >
+                Auto-launching in a few seconds…
+              </div>
+            </div>
+          </div>
         </div>
-      </header>
+      )}
+
+      {/* MAIN APP CONTENT */}
+      <div
+        style={{
+          maxWidth: "1200px",
+          margin: "0 auto",
+          filter: showLanding ? "blur(3px)" : "none",
+          transition: "filter 400ms ease",
+        }}
+      >
+        {/* TOP BAR */}
+        <header style={topBarStyle}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 40, height: 40 }}>
+              <DotLottieReact
+                src="https://lottie.host/5a79cff1-423a-4aa6-824f-954dca862994/ezy8pcAi40.lottie"
+                loop
+                autoplay
+                style={{ width: "40px", height: "40px" }}
+              />
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 700 }}>
+              BoulderMove – Smart Trip Dashboard
+            </div>
+          </div>
+
+          <div style={{ fontSize: 14, color: "#666" }}>
+            {new Date().toLocaleString()}
+          </div>
+        </header>
 
         {/* MAIN GRID */}
         <main style={mainLayoutStyle}>
@@ -290,11 +426,7 @@ export default function App() {
               {isLoaded ? (
                 <GoogleMap
                   key={
-                    origin +
-                    destination +
-                    stops +
-                    mode +
-                    showAlternatives
+                    origin + destination + stops + mode + showAlternatives
                   }
                   onLoad={(map) => (mapRef.current = map)}
                   zoom={10}
@@ -329,9 +461,7 @@ export default function App() {
                   ))}
                 </GoogleMap>
               ) : (
-                <div
-                  style={{ textAlign: "center", padding: "200px 0" }}
-                >
+                <div style={{ textAlign: "center", padding: "200px 0" }}>
                   Loading map...
                 </div>
               )}
@@ -378,14 +508,11 @@ export default function App() {
         <footer style={bottomStripStyle}>
           {routes.length > 0 ? (
             <>
-              <strong>Summary:</strong>{" "}
-              Fastest route is{" "}
-              {routes[0].duration_min} min and{" "}
-              {routes[0].distance_km} km.{" "}
+              <strong>Summary:</strong> Fastest route is{" "}
+              {routes[0].duration_min} min and {routes[0].distance_km} km.{" "}
               {routes[0].weather && (
                 <>
-                  Current weather at origin:{" "}
-                  {routes[0].weather.temp} °C,{" "}
+                  Current weather at origin: {routes[0].weather.temp} °C,{" "}
                   {routes[0].weather.weather_main}.
                 </>
               )}
@@ -486,23 +613,17 @@ function RouteCard({ route, index, mode, showWeatherDetails }) {
               <div className="weather-metrics-row">
                 <div className="weather-metric">
                   <span className="weather-metric-emoji">🌡️</span>
-                  <span>
-                    {route.weather.feels_like} °C feels like
-                  </span>
+                  <span>{route.weather.feels_like} °C feels like</span>
                 </div>
 
                 <div className="weather-metric">
                   <span className="weather-metric-emoji">💧</span>
-                  <span>
-                    {route.weather.humidity}% humidity
-                  </span>
+                  <span>{route.weather.humidity}% humidity</span>
                 </div>
 
                 <div className="weather-metric">
                   <span className="weather-metric-emoji">🌬️</span>
-                  <span>
-                    {route.weather.wind_speed} m/s wind
-                  </span>
+                  <span>{route.weather.wind_speed} m/s wind</span>
                 </div>
               </div>
 
@@ -510,16 +631,12 @@ function RouteCard({ route, index, mode, showWeatherDetails }) {
               <div className="weather-metrics-row">
                 <div className="weather-metric">
                   <span className="weather-metric-emoji">🌧️</span>
-                  <span>
-                    {(route.weather.rain_1h ?? 0)} mm rain (last hour)
-                  </span>
+                  <span>{route.weather.rain_1h ?? 0} mm rain (last hour)</span>
                 </div>
 
                 <div className="weather-metric">
                   <span className="weather-metric-emoji">❄️</span>
-                  <span>
-                    {(route.weather.snow_1h ?? 0)} mm snow (last hour)
-                  </span>
+                  <span>{route.weather.snow_1h ?? 0} mm snow (last hour)</span>
                 </div>
               </div>
             </div>
@@ -537,7 +654,7 @@ function RouteCard({ route, index, mode, showWeatherDetails }) {
         </>
       )}
 
-      {/* Alerts (reuse your helper) */}
+      {/* Alerts */}
       {route.alerts && renderAlerts(route.alerts.custom_alerts)}
     </div>
   );
