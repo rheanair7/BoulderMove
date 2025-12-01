@@ -109,6 +109,8 @@ export default function App() {
   const [showAlternatives, setShowAlternatives] = useState(false);
   const [routes, setRoutes] = useState([]);
   const [showWeatherDetails, setShowWeatherDetails] = useState(true); // default to true to remove ESLint warning
+  const [originCoords, setOriginCoords] = useState(null);
+  const [destinationCoords, setDestinationCoords] = useState(null);
 
 
   const mapRef = useRef(null);
@@ -128,14 +130,38 @@ export default function App() {
   });
 
   /* ---------------- AUTOCOMPLETE HANDLERS ---------------- */
+  // const handleOriginSelect = () => {
+  //   const place = originAutoRef.current?.getPlace();
+  //   if (place?.formatted_address) setOrigin(place.formatted_address);
+  // };
   const handleOriginSelect = () => {
-    const place = originAutoRef.current?.getPlace();
-    if (place?.formatted_address) setOrigin(place.formatted_address);
-  };
-  const handleDestinationSelect = () => {
-    const place = destAutoRef.current?.getPlace();
-    if (place?.formatted_address) setDestination(place.formatted_address);
-  };
+  const place = originAutoRef.current?.getPlace();
+  if (!place) return;
+
+  if (place.formatted_address) setOrigin(place.formatted_address);
+
+  if (place.geometry && place.geometry.location) {
+    const loc = place.geometry.location;
+    setOriginCoords({ lat: loc.lat(), lon: loc.lng() });
+  }
+};
+
+const handleDestinationSelect = () => {
+  const place = destAutoRef.current?.getPlace();
+  if (!place) return;
+
+  if (place.formatted_address) setDestination(place.formatted_address);
+
+  if (place.geometry && place.geometry.location) {
+    const loc = place.geometry.location;
+    setDestinationCoords({ lat: loc.lat(), lon: loc.lng() });
+  }
+};
+
+  // const handleDestinationSelect = () => {
+  //   const place = destAutoRef.current?.getPlace();
+  //   if (place?.formatted_address) setDestination(place.formatted_address);
+  // };
   const handleStopSelect = () => {
     const place = stopsAutoRef.current?.getPlace();
     if (place?.formatted_address) {
@@ -146,38 +172,233 @@ export default function App() {
   };
   
   /* ---------------- BACKEND REQUEST ---------------- */
-  const fetchRoute = useCallback(async () => {
-    
-    if (!origin || !destination) return;
-    clearOldRoute();
-    const url = `http://127.0.0.1:8000/plan?origin=${encodeURIComponent(
-      origin
-    )}&destination=${encodeURIComponent(
-      destination
-    )}&stops=${encodeURIComponent(stops)}&mode=${encodeURIComponent(
-      mode
-    )}&alternatives=${showAlternatives}`;
 
-    try {
-      const res = await fetch(url);
-      const data = await res.json();
-      setRoutes(
-        showAlternatives ? data.routes || [] : data.routes?.slice(0, 1) || []
-      );
-    } catch (err) {
-      console.error("Fetch error:", err);
+const COMBINED_ROUTER_URL = process.env.REACT_APP_COMBINED_ROUTER_URL;
+
+const parseHHMMSS = (t) => {
+  if (!t) return null;
+  const [h, m, s] = t.split(":").map(Number);
+  return h * 3600 + m * 60 + (s || 0);
+};
+const fetchRoute = useCallback(async () => {
+  if (!originCoords || !destinationCoords) return;
+  clearOldRoute();
+
+  const body = {
+    origin: { lat: originCoords.lat, lon: originCoords.lon },
+    destination: { lat: destinationCoords.lat, lon: destinationCoords.lon },
+    depart_at: new Date().toISOString(),
+  };
+
+  try {
+    const res = await fetch(`${COMBINED_ROUTER_URL}/plan_transit_full`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      console.error("Error fetching route:", await res.text());
+      return;
     }
-  }, [origin, destination, stops, mode, showAlternatives]);
 
-  useEffect(() => {
-    const t = setTimeout(fetchRoute, 500);
-    return () => clearTimeout(t);
-  }, [fetchRoute]);
+    const data = await res.json();
+
+    // Map backend response into frontend route shape
+    const routeObj = {
+      summary: "Walk → Transit → Walk",
+      duration_min:
+        (data.walk_to_stop.length + data.walk_to_destination.length) * 1, // placeholder, you may want actual transit duration
+      distance_km:
+        (data.walk_to_stop.length + data.walk_to_destination.length) * 0.001, // placeholder
+      polyline: null,
+      polylineCoords: [
+        ...data.walk_to_stop,
+        ...data.walk_to_destination,
+      ],
+      start_location: data.walk_to_stop[0],
+      end_location:
+        data.walk_to_destination[data.walk_to_destination.length - 1],
+      waypoint_locations: [],
+      stops: data.transit.flatMap((leg) => leg.intermediate_stops || []),
+      weather: data.weather,
+      alerts: data.weather?.alerts || null,
+      events_nearby: data.events_nearby,
+      transit_raw: data.transit,
+    };
+
+    setRoutes([routeObj]);
+  } catch (err) {
+    console.error("Fetch error:", err);
+  }
+}, [originCoords, destinationCoords]);
+
+// const fetchRoute = useCallback(async () => {
+//   if (!origin || !destination) return;
+//   clearOldRoute();
+
+//   // 🔹 If user picked “transit”, call your GTFS backend
+//   if (mode === "transit") {
+//     if (!originCoords || !destinationCoords) {
+//       console.warn("Need origin/destination coords for transit");
+//       return;
+//     }
+
+//     try {
+//       const body = {
+//         origin: originCoords,
+//         destination: destinationCoords,
+//         depart_at: new Date().toISOString(),
+//       };
+
+//       const res = await fetch(`${TRANSIT_API_URL}/plan_transit_full`, {
+//         method: "POST",
+//         headers: { "Content-Type": "application/json" },
+//         body: JSON.stringify(body),
+//       });
+//       if (!res.ok) {
+//         console.error("Transit API error", await res.text());
+//         return;
+//       }
+//       const data = await res.json();
+
+//       // ---- Map service_router response into your “route” shape ----
+//       const legs = data.transit?.legs || [];
+
+//       let durationMin = null;
+//       if (legs.length > 0) {
+//         const firstDep = parseHHMMSS(legs[0].departure);
+//         const lastArr = parseHHMMSS(legs[legs.length - 1].arrival);
+//         if (firstDep != null && lastArr != null) {
+//           durationMin = (lastArr - firstDep) / 60;
+//         }
+//       }
+
+//       const totalWalkM =
+//         (data.origin_walk?.distance_m || 0) +
+//         (data.destination_walk?.distance_m || 0);
+
+//       const summary =
+//         legs.length > 0
+//           ? `Walk → Transit (${legs[0].route_id || legs[0].trip_id}) → Walk`
+//           : "Walk + transit";
+
+//       // Build one approximate polyline from both walking segments
+//       const polylineCoords = [
+//         ...(data.origin_walk?.path || []).map((p) => ({
+//           lat: p.lat,
+//           lng: p.lon,
+//         })),
+//         ...(data.destination_walk?.path || []).map((p) => ({
+//           lat: p.lat,
+//           lng: p.lon,
+//         })),
+//       ];
+
+//       const routeObj = {
+//         summary,
+//         duration_min: durationMin,
+//         distance_km: totalWalkM / 1000,
+//         polyline: null,            // no encoded polyline
+//         polylineCoords,            // custom coords for map
+//         start_location: {
+//           lat: data.origin.lat,
+//           lng: data.origin.lon,
+//         },
+//         end_location: {
+//           lat: data.destination.lat,
+//           lng: data.destination.lon,
+//         },
+//         waypoint_locations: [],    // you can fill from stops later
+//         stops: legs.flatMap((l) => l.intermediate_stops || []),
+//         weather: null,
+//         alerts: null,
+//         events_nearby: [],         // no events here
+
+//         transit_raw: data,         // keep full payload if you want later
+//       };
+
+//       setRoutes([routeObj]);
+//       return;
+//     } catch (err) {
+//       console.error("Transit fetch error:", err);
+//       return;
+//     }
+//   }
+
+//   // 🔹 ELSE: non-transit modes use your existing FastAPI `/plan`
+  
+//   const url = `https://bouldermove-transit-499631536778.us-central1.run.app/plan?origin=${encodeURIComponent(
+//     origin
+//   )}&destination=${encodeURIComponent(
+//     destination
+//   )}&stops=${encodeURIComponent(stops)}&mode=${encodeURIComponent(
+//     mode
+//   )}&alternatives=${showAlternatives}`;
+
+//   try {
+//     const res = await fetch(url);
+//     const data = await res.json();
+//     setRoutes(
+//       showAlternatives ? data.routes || [] : data.routes?.slice(0, 1) || []
+//     );
+//   } catch (err) {
+//     console.error("Fetch error:", err);
+//   }
+// }, [
+//   origin,
+//   destination,
+//   originCoords,
+//   destinationCoords,
+//   stops,
+//   mode,
+//   showAlternatives,
+// ]);
+
+  // const fetchRoute = useCallback(async () => {
+    
+  //   if (!origin || !destination) return;
+  //   clearOldRoute();
+  //   const url = `http://127.0.0.1:8000/plan?origin=${encodeURIComponent(
+  //     origin
+  //   )}&destination=${encodeURIComponent(
+  //     destination
+  //   )}&stops=${encodeURIComponent(stops)}&mode=${encodeURIComponent(
+  //     mode
+  //   )}&alternatives=${showAlternatives}`;
+
+  //   try {
+  //     const res = await fetch(url);
+  //     const data = await res.json();
+  //     setRoutes(
+  //       showAlternatives ? data.routes || [] : data.routes?.slice(0, 1) || []
+  //     );
+  //   } catch (err) {
+  //     console.error("Fetch error:", err);
+  //   }
+  // }, [origin, destination, stops, mode, showAlternatives]);
+
+  // useEffect(() => {
+  //   const t = setTimeout(fetchRoute, 500);
+  //   return () => clearTimeout(t);
+  // }, [fetchRoute]);
 
   /* -------- Decode Polylines ------------ */
-  const decodedRoutes = routes.map((r) =>
-    r.polyline ? polyline.decode(r.polyline).map(([lat, lng]) => ({ lat, lng })) : []
-  );
+  const decodedRoutes = routes.map((r) => {
+  if (r.polylineCoords && r.polylineCoords.length > 0) {
+    return r.polylineCoords;
+  }
+  if (r.polyline) {
+    return polyline
+      .decode(r.polyline)
+      .map(([lat, lng]) => ({ lat, lng }));
+  }
+  return [];
+});
+
+  // const decodedRoutes = routes.map((r) =>
+  //   r.polyline ? polyline.decode(r.polyline).map(([lat, lng]) => ({ lat, lng })) : []
+  // );
 
   const buildMarkers = () => {
     if (routes.length === 0) return [];

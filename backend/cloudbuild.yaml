@@ -1,0 +1,6 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/total-glider-478721-t9/bouldermove-transit:latest', '.']
+
+images:
+  - 'gcr.io/total-glider-478721-t9/bouldermove-transit:latest'
