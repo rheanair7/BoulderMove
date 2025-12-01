@@ -110,6 +110,7 @@ export default function App() {
   const [routes, setRoutes] = useState([]);
   const [showWeatherDetails, setShowWeatherDetails] = useState(true); // default to true to remove ESLint warning
 
+
   const mapRef = useRef(null);
 
   // --- Autocomplete refs ---
@@ -729,6 +730,8 @@ const renderAlerts = (alerts) => {
 /* -------- EVENTS (Ticketmaster version) -------- */
 const renderEvents = (eventsWrapper) => {
   // Normalize shape: array OR { count, events: [...] }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // start of today
   const rawEvents = Array.isArray(eventsWrapper)
     ? eventsWrapper
     : eventsWrapper?.events ?? [];
@@ -754,15 +757,14 @@ const renderEvents = (eventsWrapper) => {
     const time = timeStr ? new Date(timeStr) : null;
 
     // ✅ If we have a time and it is in the past, skip this occurrence
-    if (time && time < now) continue;
+  if (!time) continue;
+  const eventDate = new Date(time);
+  eventDate.setHours(0, 0, 0, 0); // normalize to midnight
 
-    // If there is no time at all, you can either:
-    //  - skip it: if (!time) continue;
-    //  - or keep it grouped by an empty date string (current behavior below)
-    const dateStr = time ? time.toDateString() : "";
+  if (eventDate.getTime() !== today.getTime()) continue; // only today
 
-    const key = `${name.toLowerCase()}::${venue.toLowerCase()}::${dateStr}`;
-
+  const dateStr = time.toDateString();
+  const key = `${name.toLowerCase()}::${venue.toLowerCase()}::${dateStr}`;
     if (!groups.has(key)) {
       groups.set(key, {
         base: e,
