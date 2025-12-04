@@ -1,6 +1,4 @@
-# combined_router.py
-
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
@@ -9,6 +7,9 @@ import geopandas as gpd
 import numpy as np
 import osmnx as ox
 from shapely.geometry import Point
+import requests
+from datetime import datetime
+import polyline
 
 from weather_service import get_weather_and_alerts
 from events_service import events_near_route
@@ -27,7 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global variables
+# Globals
 G = None
 nodes_gdf = None
 node_ids = None
@@ -49,6 +50,7 @@ class PlanTransitRequest(BaseModel):
     depart_at: str | None = None
 
 
+# ------------------- LOAD DATA ----------------------
 @app.on_event("startup")
 def load_data():
     global G, nodes_gdf, node_ids, node_x, node_y, stops_gdf, graph_crs, raptor
@@ -58,18 +60,22 @@ def load_data():
     graph_crs = G.graph["crs"]
 
     nodes = ox.graph_to_gdfs(G, nodes=True, edges=False)
-    nodes_gdf_local = nodes.to_crs(graph_crs)
-    nodes_gdf = nodes_gdf_local
-    node_ids = np.array(nodes_gdf.index)
-    node_x = nodes_gdf.geometry.x.to_numpy()
-    node_y = nodes_gdf.geometry.y.to_numpy()
+    nodes = nodes.to_crs(graph_crs)
+
+    nodes_gdf = nodes
+    node_ids = np.array(nodes.index)
+    node_x = nodes.geometry.x.to_numpy()
+    node_y = nodes.geometry.y.to_numpy()
 
     print("Loading stops…")
-    stops_gdf_local = gpd.read_file(os.path.join(OUTPUT, "stops.geojson"))
-    stops_proj = stops_gdf_local.to_crs(graph_crs)
-    stops_gdf_local["_x_proj"] = stops_proj.geometry.x
-    stops_gdf_local["_y_proj"] = stops_proj.geometry.y
-    stops_gdf = stops_gdf_local
+    stops = gpd.read_file(os.path.join(OUTPUT, "stops.geojson"))
+    stops["stop_id"] = stops["stop_id"].astype(str)
+
+    stops_proj = stops.to_crs(graph_crs)
+    stops["_x_proj"] = stops_proj.geometry.x
+    stops["_y_proj"] = stops_proj.geometry.y
+
+    stops_gdf = stops
 
     print("Loading RAPTOR engine…")
     raptor = raptor_engine.RaptorEngine(
@@ -83,12 +89,12 @@ def load_data():
     print("Backend startup complete.")
 
 
+# ------------------ HELPERS -----------------------
 def nearest_graph_node(lat, lon):
     pt = gpd.GeoSeries([Point(lon, lat)], crs="EPSG:4326").to_crs(graph_crs)[0]
     dx = node_x - pt.x
     dy = node_y - pt.y
-    idx = np.argmin(dx*dx + dy*dy)
-    return node_ids[idx]
+    return node_ids[np.argmin(dx*dx + dy*dy)]
 
 
 def path_to_latlon(path):
@@ -98,7 +104,7 @@ def path_to_latlon(path):
     return [{"lat": row.geometry.y, "lon": row.geometry.x} for _, row in nodes.iterrows()]
 
 
-def nearest_stop_id(lat, lon):
+def nearest_gtfs_stop(lat, lon):
     pt = gpd.GeoSeries([Point(lon, lat)], crs="EPSG:4326").to_crs(graph_crs)[0]
     dx = stops_gdf["_x_proj"].to_numpy() - pt.x
     dy = stops_gdf["_y_proj"].to_numpy() - pt.y
@@ -106,46 +112,132 @@ def nearest_stop_id(lat, lon):
     return str(stops_gdf.iloc[idx]["stop_id"])
 
 
+def format_weather(raw):
+    if not raw:
+        return None
+    current = raw.get("current", {})
+    return {
+        "temp": current.get("temp"),
+        "feels_like": current.get("feels_like"),
+        "humidity": current.get("humidity"),
+        "weather_main": current.get("weather_main"),
+        "weather_desc": current.get("weather_desc"),
+        "wind_speed": current.get("wind_speed"),
+        "rain_1h": current.get("rain_1h", 0),
+        "snow_1h": current.get("snow_1h", 0),
+        "custom_alerts": raw.get("custom_alerts", []),
+    }
+
+
+# ---------------- GOOGLE BACKUP FUNCTION ----------------
+
+def google_transit_route(origin, destination):
+    key = os.getenv("GOOGLE_MAPS_API_KEY")
+    if not key:
+        print("[GOOGLE BACKUP] Missing API key.")
+        return None
+
+    url = (
+        "https://maps.googleapis.com/maps/api/directions/json?"
+        f"origin={origin.lat},{origin.lon}&"
+        f"destination={destination.lat},{destination.lon}&"
+        f"mode=transit&"
+        f"departure_time=now&"
+        f"key={key}"
+    )
+
+    try:
+        r = requests.get(url, timeout=6)
+        data = r.json()
+
+        if data.get("routes"):
+            overview = data["routes"][0]["overview_polyline"]["points"]
+            coords = polyline.decode(overview)
+            return [{"lat": lat, "lon": lon} for lat, lon in coords]
+
+        return None
+
+    except Exception as e:
+        print("[GOOGLE BACKUP ERROR]", e)
+        return None
+
+
+# --------------- MAIN ROUTE ----------------------
 @app.post("/plan_transit_full")
 def plan_transit_full(req: PlanTransitRequest):
 
-    origin_stop = nearest_stop_id(req.origin.lat, req.origin.lon)
-    dest_stop = nearest_stop_id(req.destination.lat, req.destination.lon)
+    departure_iso = req.depart_at or datetime.now().replace(microsecond=0).isoformat()
+    print("Using departure time:", departure_iso)
 
-    # walking → transit-stop
-    walk1_node = nearest_graph_node(req.origin.lat, req.origin.lon)
-    stop1_node = int(stops_gdf.loc[stops_gdf["stop_id"] == origin_stop]["nearest_node"])
-    walk1_path = nx.shortest_path(G, walk1_node, stop1_node, weight="length")
+    # ORIGIN STOP
+    origin_stop = nearest_gtfs_stop(req.origin.lat, req.origin.lon)
+    origin_match = stops_gdf.loc[stops_gdf["stop_id"] == origin_stop]
 
-    # transit legs
-    transit_legs = raptor.plan(
-        origin_stop_id=origin_stop,
-        dest_stop_id=dest_stop,
-        departure_time_iso=req.depart_at or "2025-11-22T09:00:00Z",
-    )
+    # DEST STOP
+    dest_stop = nearest_gtfs_stop(req.destination.lat, req.destination.lon)
+    dest_match = stops_gdf.loc[stops_gdf["stop_id"] == dest_stop]
 
-    # walking → final destination
-    walk3_node = nearest_graph_node(req.destination.lat, req.destination.lon)
-    stop3_node = int(stops_gdf.loc[stops_gdf["stop_id"] == dest_stop]["nearest_node"])
-    walk3_path = nx.shortest_path(G, stop3_node, walk3_node, weight="length")
+    # WALK TO FIRST STOP
+    walk1_path = nx.shortest_path(G,
+                                  nearest_graph_node(req.origin.lat, req.origin.lon),
+                                  int(origin_match["nearest_node"].iloc[0]),
+                                  weight="length")
+    walk1_latlon = path_to_latlon(walk1_path)
 
-    # Weather (use origin)
-    weather = get_weather_and_alerts(req.origin.lat, req.origin.lon)
+    # TRANSIT USING RAPTOR
+    transit_legs = raptor.plan(origin_stop, dest_stop, departure_iso)
 
-    # Events using walking polyline ONLY
-    full_polyline = path_to_latlon(walk1_path) + path_to_latlon(walk3_path)
-    events = events_near_route([(p["lat"], p["lon"]) for p in full_polyline])
+    # FALLBACK IF RAPTOR FAILS
+    if not transit_legs or len(transit_legs) == 0:
+        print("⚠ RAPTOR FAILED → Using Google Transit API fallback")
+        google_geom = google_transit_route(req.origin, req.destination)
+
+        if google_geom:
+            return {
+                "mode": "google_transit_fallback",
+                "walk_to_stop": [],
+                "transit": [],
+                "walk_to_destination": [],
+                "geometry": google_geom,
+                "weather": format_weather(get_weather_and_alerts(req.origin.lat, req.origin.lon)),
+                "events_nearby": []
+            }
+        else:
+            return {"error": "No route found by RAPTOR or Google Maps."}
+
+    # BUILD RAPTOR GEOMETRY
+    transit_geometry = []
+    for leg in transit_legs:
+        for sid in leg["intermediate_stops"]:
+            row = stops_gdf.loc[stops_gdf["stop_id"] == sid].iloc[0]
+            transit_geometry.append({"lat": row["stop_lat"], "lon": row["stop_lon"]})
+
+    # WALK TO DESTINATION
+    walk3_path = nx.shortest_path(G,
+                                  int(dest_match["nearest_node"].iloc[0]),
+                                  nearest_graph_node(req.destination.lat, req.destination.lon),
+                                  weight="length")
+    walk3_latlon = path_to_latlon(walk3_path)
+
+    # WEATHER + EVENTS
+    weather = format_weather(get_weather_and_alerts(req.origin.lat, req.origin.lon))
+    full_geometry = walk1_latlon + transit_geometry + walk3_latlon
+    events = events_near_route([(p["lat"], p["lon"]) for p in full_geometry])
 
     return {
         "mode": "walk_transit_walk",
-        "origin_stop": origin_stop,
-        "destination_stop": dest_stop,
-        "walk_to_stop": path_to_latlon(walk1_path),
+        "origin_gtfs_stop": origin_stop,
+        "destination_gtfs_stop": dest_stop,
+        "walk_to_stop": walk1_latlon,
         "transit": transit_legs,
-        "walk_to_destination": path_to_latlon(walk3_path),
+        "walk_to_destination": walk3_latlon,
         "weather": weather,
-        "events_nearby": events
+        "events_nearby": events,
+        "geometry": full_geometry
     }
+
+
+# Run locally
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8080)))

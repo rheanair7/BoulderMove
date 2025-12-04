@@ -1,16 +1,13 @@
-import { DotLottieReact } from "@lottiefiles/dotlottie-react";
+cimport { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   GoogleMap,
   Polyline,
   Marker,
   useJsApiLoader,
+  Autocomplete,
 } from "@react-google-maps/api";
-import { Autocomplete } from "@react-google-maps/api";
 import polyline from "@mapbox/polyline";
-import "./App.css";
-
-const GOOGLE_MAP_LIBRARIES = ["places"];
 
 /* ---------------- MAP STYLE ---------------- */
 const mapContainerStyle = {
@@ -29,16 +26,15 @@ const mapOptions = {
   mapTypeControl: false,
 };
 
-/* -------- Shared Layout Styles (dark-mode aware) -------- */
-const topBarStyle = (darkMode) => ({
+/* -------- Shared Layout Styles -------- */
+const topBarStyle = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
   padding: "16px 24px",
-  background: darkMode ? "#111827" : "white",
-  color: darkMode ? "#e5e7eb" : "#111827",
-  borderBottom: darkMode ? "1px solid #374151" : "1px solid #e2e2e7",
-});
+  background: "white",
+  borderBottom: "1px solid #e2e2e7",
+};
 
 const mainLayoutStyle = {
   display: "grid",
@@ -47,25 +43,22 @@ const mainLayoutStyle = {
   padding: "16px 24px",
 };
 
-const leftPanelStyle = (darkMode) => ({
-  background: darkMode ? "#111827" : "white",
-  color: darkMode ? "#e5e7eb" : "#111827",
+const leftPanelStyle = {
+  background: "white",
   borderRadius: "12px",
   padding: "16px",
   boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-});
+};
 
-const centerPanelStyle = (darkMode) => ({
-  background: darkMode ? "#111827" : "white",
-  color: darkMode ? "#e5e7eb" : "#111827",
+const centerPanelStyle = {
+  background: "white",
   borderRadius: "12px",
   padding: "8px",
   boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-});
+};
 
-const rightPanelStyle = (darkMode) => ({
-  background: darkMode ? "#111827" : "white",
-  color: darkMode ? "#e5e7eb" : "#111827",
+const rightPanelStyle = {
+  background: "white",
   borderRadius: "12px",
   padding: "16px",
   boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
@@ -74,54 +67,47 @@ const rightPanelStyle = (darkMode) => ({
   gap: "8px",
   maxHeight: "600px",
   overflowY: "auto",
-});
+};
 
-const bottomStripStyle = (darkMode) => ({
+const bottomStripStyle = {
   marginTop: "8px",
   padding: "8px 24px 18px",
   fontSize: "14px",
-  color: darkMode ? "#d1d5db" : "#555",
-});
+  color: "#555",
+};
 
 /* Chip buttons */
-const chipStyle = (darkMode) => ({
+const chipStyle = {
   fontSize: "12px",
   padding: "4px 10px",
   borderRadius: "999px",
-  border: darkMode ? "1px solid #4b5563" : "1px solid #ddd",
-  background: darkMode ? "#1f2937" : "white",
-  color: darkMode ? "#e5e7eb" : "#111827",
+  border: "1px solid #ddd",
+  background: "white",
   cursor: "pointer",
-});
+};
 
 /* Input styles */
-const inputStyle = (darkMode) => ({
+const inputStyle = {
   padding: "10px",
   borderRadius: "8px",
-  border: darkMode ? "1px solid #4b5563" : "1px solid #ccc",
+  border: "1px solid #ccc",
   fontSize: "14px",
-  background: darkMode ? "#111827" : "white",
-  color: darkMode ? "#e5e7eb" : "#111827",
-});
+};
 
-const inputStyleLarge = (darkMode) => ({
+const inputStyleLarge = {
   flex: 2,
   padding: "12px",
   borderRadius: "8px",
-  border: darkMode ? "1px solid #4b5563" : "1px solid #ccc",
-  background: darkMode ? "#111827" : "white",
-  color: darkMode ? "#e5e7eb" : "#111827",
-});
+  border: "1px solid #ccc",
+};
 
-const selectStyle = (darkMode) => ({
+const selectStyle = {
   padding: "10px",
   borderRadius: "8px",
-  border: darkMode ? "1px solid #4b5563" : "1px solid #ccc",
+  border: "1px solid #ccc",
   minWidth: "150px",
   fontSize: "14px",
-  background: darkMode ? "#111827" : "white",
-  color: darkMode ? "#e5e7eb" : "#111827",
-});
+};
 
 /* ---------------- MAIN COMPONENT ---------------- */
 export default function App() {
@@ -144,8 +130,7 @@ export default function App() {
   const [mode, setMode] = useState("driving");
   const [showAlternatives, setShowAlternatives] = useState(false);
   const [routes, setRoutes] = useState([]);
-  const [darkMode, setDarkMode] = useState(false);
-  const [showWeatherDetails, setShowWeatherDetails] = useState(false);
+  const [showWeatherDetails, setShowWeatherDetails] = useState(true);
   const [originCoords, setOriginCoords] = useState(null);
   const [destinationCoords, setDestinationCoords] = useState(null);
 
@@ -156,12 +141,11 @@ export default function App() {
 
   const clearOldRoute = () => setRoutes([]);
 
-  /* Load Google Maps API */
+/* Load Google Maps API */
   const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY,
-    libraries: GOOGLE_MAP_LIBRARIES,
-  });
-
+  googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY,
+  libraries: ["places"],
+});
   /* ---------------- AUTOCOMPLETE HANDLERS ---------------- */
   const handleOriginSelect = () => {
     const place = originAutoRef.current?.getPlace();
@@ -196,146 +180,116 @@ export default function App() {
     }
   };
 
-  /* ---------------- GOOGLE DIRECTIONS VIA BACKEND PROXY (NON-TRANSIT) ---------------- */
-  /* ---------------- GOOGLE DIRECTIONS VIA BACKEND PROXY (NON-TRANSIT) ---------------- */
-const fetchGoogleRoute = useCallback(async () => {
-  if (!originCoords || !destinationCoords) return;
-  if (mode === "transit") return; // safety
+  /* -------- Time parser for HH:MM:SS → seconds -------- */
+  const parseHHMMSS = (t) => {
+    if (!t) return null;
+    const [h, m, s] = t.split(":").map(Number);
+    return h * 3600 + m * 60 + (s || 0);
+  };
 
-  const baseUrl = process.env.REACT_APP_COMBINED_ROUTER_URL;
-  if (!baseUrl) {
-    console.error("REACT_APP_COMBINED_ROUTER_URL is not set");
-    return;
-  }
+  /* ---------------- MAIN BACKEND REQUEST ---------------- */
+  const fetchRoute = useCallback(
+    async () => {
+      console.log("🚀 FETCH ROUTE CALLED", { mode, originCoords, destinationCoords });
 
-  const params = new URLSearchParams({
-    origin: `${originCoords.lat},${originCoords.lon}`,
-    destination: `${destinationCoords.lat},${destinationCoords.lon}`,
-    mode,
-    alternatives: showAlternatives ? "true" : "false",
-  });
+      if (mode !== "transit") return;
+      if (!originCoords || !destinationCoords) return;
 
-  try {
-    const res = await fetch(`${baseUrl}/google_directions?${params.toString()}`);
-    const data = await res.json();
+      clearOldRoute();
 
-    if (!data.routes || data.routes.length === 0) {
-      console.warn("No routes from google_directions proxy");
-      setRoutes([]);
-      return;
-    }
-
-    const mappedRoutes = data.routes.map((route) => {
-      const leg = route.legs[0];
-      const pts = polyline
-        .decode(route.overview_polyline.points)
-        .map(([lat, lng]) => ({ lat, lng }));
-
-      return {
-        summary: route.summary || `${mode} route`,
-        duration_min: leg.duration?.value / 60 || null,
-        distance_km: leg.distance?.value / 1000 || null,
-        polylineCoords: pts,
-        weather: null,
-        alerts: null,
-        events_nearby: [],
+      const body = {
+        origin: { lat: originCoords.lat, lon: originCoords.lon },
+        destination: { lat: destinationCoords.lat, lon: destinationCoords.lon },
+        depart_at: new Date().toISOString(),
       };
-    });
 
-    setRoutes(mappedRoutes);
-  } catch (err) {
-    console.error("Proxy google_directions fetch failed:", err);
-  }
-}, [originCoords, destinationCoords, mode, showAlternatives]);
-             
-  /* ---------------- TRANSIT BACKEND REQUEST ---------------- */
-  const fetchTransitRoute = useCallback(async () => {
-    if (mode !== "transit") return;
-    if (!originCoords || !destinationCoords) return;
+      try {
+        const res = await fetch(
+          `${process.env.REACT_APP_COMBINED_ROUTER_URL}/plan_transit_full`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          }
+        );
 
-    clearOldRoute();
+        if (!res.ok) {
+          console.error("Transit API error:", await res.text());
+          return;
+        }
 
-    const body = {
-      origin: { lat: originCoords.lat, lon: originCoords.lon },
-      destination: { lat: destinationCoords.lat, lon: destinationCoords.lon },
-      depart_at: new Date().toISOString(),
-    };
+        const data = await res.json();
+        const legs = data.transit?.legs || [];
 
-    const url = `${process.env.REACT_APP_COMBINED_ROUTER_URL}/plan_transit_full`;
+        let durationMin = null;
+        if (legs.length > 0) {
+          const firstDep = parseHHMMSS(legs[0].departure);
+          const lastArr = parseHHMMSS(legs[legs.length - 1].arrival);
+          if (firstDep != null && lastArr != null) {
+            durationMin = (lastArr - firstDep) / 60;
+          }
+        }
 
-    console.log("DEBUG: ➜ Transit fetch STARTED");
-    console.log("DEBUG: URL →", url);
-    console.log("DEBUG: Sending →", body);
+        const totalWalkM =
+          (data.origin_walk?.distance_m || 0) +
+          (data.destination_walk?.distance_m || 0);
 
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+        const summary =
+          legs.length > 0
+            ? `Walk → Transit (${legs[0].route_id || legs[0].trip_id}) → Walk`
+            : "Walk + transit";
 
-      const data = await res.json();
-
-      if (data.error) {
-        console.log("Backend error:", data.error);
-        alert(data.error);
-        return;
-      }
-
-      console.log("DEBUG: Response →", data);
-
-      const routeObj = {
-        summary:
-          data.transit?.legs?.length > 0
-            ? `Transit via ${
-                data.transit.legs[0].route_id || data.transit.legs[0].trip_id
-              }`
-            : "Walking only",
-        duration_min: null,
-        distance_km: null,
-        polylineCoords: [
-          ...(data.walk_to_stop || []).map((p) => ({ lat: p.lat, lng: p.lon })),
-          ...(data.walk_to_destination || []).map((p) => ({
+        const polylineCoords = [
+          ...(data.origin_walk?.path || []).map((p) => ({
             lat: p.lat,
             lng: p.lon,
           })),
-        ],
-        start_location: {
-          lat: body.origin.lat,
-          lng: body.origin.lon,
-        },
-        end_location: {
-          lat: body.destination.lat,
-          lng: body.destination.lon,
-        },
-        stops:
-          data.transit?.legs?.flatMap((l) => l.intermediate_stops || []) || [],
-        weather: data.weather || null,
-        alerts: { custom_alerts: data.weather?.custom_alerts || [] },
-        events_nearby: data.events_nearby || [],
-        transit_raw: data,
-      };
+          ...(data.destination_walk?.path || []).map((p) => ({
+            lat: p.lat,
+            lng: p.lon,
+          })),
+        ];
 
-      setRoutes([routeObj]);
-    } catch (err) {
-      console.error("Transit fetch error:", err);
-    }
-  }, [mode, originCoords, destinationCoords]);
+        const routeObj = {
+          summary,
+          duration_min: durationMin,
+          distance_km: totalWalkM / 1000,
+          polyline: null,
+          polylineCoords,
+          start_location: {
+            lat: data.origin.lat,
+            lng: data.origin.lon,
+          },
+          end_location: {
+            lat: data.destination.lat,
+            lng: data.destination.lon,
+          },
+          waypoint_locations: [],
+          stops: legs.flatMap((l) => l.intermediate_stops || []),
+          weather: null,
+          alerts: null,
+          events_nearby: [],
+          transit_raw: data,
+        };
 
-  /* Auto-run when mode/coords change */
+        setRoutes([routeObj]);
+      } catch (err) {
+        console.error("Fetch error:", err);
+      }
+    },
+    [mode, originCoords, destinationCoords]
+  );
+
+  /* Auto-run fetchRoute on state changes */
   useEffect(() => {
-    if (!originCoords || !destinationCoords) return;
-
-    console.log("DEBUG: mode =", mode);
-    console.log("DEBUG: originCoords =", originCoords);
-    console.log("DEBUG: destinationCoords =", destinationCoords);
-
     if (mode === "transit") {
-      fetchTransitRoute();
-    } else {
-      fetchGoogleRoute();
+      const timer = setTimeout(fetchRoute, 400);
+      return () => clearTimeout(timer);
     }
-  }, [mode, originCoords, destinationCoords, fetchGoogleRoute, fetchTransitRoute]);
+  }, [fetchRoute, mode]);
+
+
+
 
   /* -------- Decode Polylines or use custom coords -------- */
   const decodedRoutes = routes.map((r) => {
@@ -351,22 +305,18 @@ const fetchGoogleRoute = useCallback(async () => {
   /* -------- Build route markers -------- */
   const buildMarkers = () => {
     if (routes.length === 0) return [];
-
     const r = routes[0];
     const markers = [];
-
     if (r.start_location) markers.push({ position: r.start_location });
     if (r.waypoint_locations)
       r.waypoint_locations.forEach((wp) => markers.push({ position: wp }));
     if (r.end_location) markers.push({ position: r.end_location });
-
     return markers;
   };
 
   /* -------- Fit map to route -------- */
   useEffect(() => {
     if (!isLoaded || !mapRef.current || decodedRoutes.length === 0) return;
-
     const bounds = new window.google.maps.LatLngBounds();
     decodedRoutes.forEach((path) => path.forEach((p) => bounds.extend(p)));
     mapRef.current.fitBounds(bounds);
@@ -383,13 +333,11 @@ const fetchGoogleRoute = useCallback(async () => {
 
   return (
     <div
-      className={darkMode ? "dark-mode" : "light-mode"}
       style={{
         minHeight: "100vh",
+        background: "#f5f5f8",
         position: "relative",
         overflow: "hidden",
-        background: darkMode ? "#020617" : "#f5f5f8",
-        color: darkMode ? "#e5e7eb" : "#111827",
       }}
     >
       {/* FULL-SCREEN LANDING OVERLAY */}
@@ -441,7 +389,6 @@ const fetchGoogleRoute = useCallback(async () => {
               >
                 BoulderMove
               </h1>
-
               <p
                 style={{
                   margin: "0 0 12px",
@@ -509,7 +456,7 @@ const fetchGoogleRoute = useCallback(async () => {
         }}
       >
         {/* TOP BAR */}
-        <header style={topBarStyle(darkMode)}>
+        <header style={topBarStyle}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 40, height: 40 }}>
               <DotLottieReact
@@ -524,41 +471,14 @@ const fetchGoogleRoute = useCallback(async () => {
             </div>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              color: darkMode ? "#ddd" : "#666",
-              fontSize: "14px",
-            }}
-          >
-            {/* Dark Mode Toggle Button */}
-            <button
-              onClick={() => setDarkMode((prev) => !prev)}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "8px",
-                border: darkMode ? "1px solid #4b5563" : "1px solid #ccc",
-                background: darkMode ? "#1f2937" : "white",
-                color: darkMode ? "white" : "#333",
-                cursor: "pointer",
-                fontSize: "13px",
-                transition: "all 0.3s ease",
-              }}
-            >
-              {darkMode ? "🌞 Light Mode" : "🌙 Dark Mode"}
-            </button>
-
-            {/* Date-Time */}
-            <span>{new Date().toLocaleString()}</span>
+          <div style={{ fontSize: 14, color: "#666" }}>
+            {new Date().toLocaleString()}
           </div>
         </header>
-
         {/* MAIN GRID */}
         <main style={mainLayoutStyle}>
           {/* LEFT PANEL – controls */}
-          <section style={leftPanelStyle(darkMode)}>
+          <section style={leftPanelStyle}>
             <h2
               style={{
                 fontSize: 16,
@@ -573,13 +493,29 @@ const fetchGoogleRoute = useCallback(async () => {
               {/* ORIGIN */}
               <Autocomplete
                 onLoad={(ref) => (originAutoRef.current = ref)}
-                onPlaceChanged={handleOriginSelect}
+                onPlaceChanged={() => {
+                 const place = originAutoRef.current.getPlace();
+                 console.log("📍 ORIGIN PLACE", place);
+
+                 if (!place.geometry || !place.geometry.location) {
+                   console.warn("❌ No geometry returned for ORIGIN");
+                  return;
+                  }
+
+                  const coords = {
+                   lat: place.geometry.location.lat(),
+                   lng: place.geometry.location.lng(),
+                  };
+                   console.log("📍 ORIGIN COORDS SET", coords);
+                   setOriginCoords(coords);
+                   }}
+	
               >
                 <input
                   value={origin}
                   onChange={(e) => setOrigin(e.target.value)}
                   placeholder="Origin"
-                  style={inputStyle(darkMode)}
+                  style={inputStyle}
                 />
               </Autocomplete>
 
@@ -592,20 +528,36 @@ const fetchGoogleRoute = useCallback(async () => {
                   value={stops}
                   onChange={(e) => setStops(e.target.value)}
                   placeholder="Stops — semicolon separated"
-                  style={inputStyleLarge(darkMode)}
+                  style={inputStyleLarge}
                 />
               </Autocomplete>
 
               {/* DESTINATION */}
               <Autocomplete
                 onLoad={(ref) => (destAutoRef.current = ref)}
-                onPlaceChanged={handleDestinationSelect}
+                   onPlaceChanged={() => {
+  		     const place = destAutoRef.current.getPlace();
+  		     console.log("📍 DEST PLACE", place);
+
+  		     if (!place.geometry || !place.geometry.location) {
+    			console.warn("❌ No geometry returned for DESTINATION");
+    			return;
+  			}
+
+  		     const coords = {
+    			lat: place.geometry.location.lat(),
+    			lng: place.geometry.location.lng(),
+  			};
+ 		      console.log("📍 DEST COORDS SET", coords);
+  		      setDestinationCoords(coords);
+		     }}
+		
               >
                 <input
                   value={destination}
                   onChange={(e) => setDestination(e.target.value)}
                   placeholder="Destination"
-                  style={inputStyle(darkMode)}
+                  style={inputStyle}
                 />
               </Autocomplete>
 
@@ -613,7 +565,7 @@ const fetchGoogleRoute = useCallback(async () => {
               <select
                 value={mode}
                 onChange={(e) => setMode(e.target.value)}
-                style={selectStyle(darkMode)}
+                style={selectStyle}
               >
                 <option value="driving">🚗 Driving</option>
                 <option value="walking">🚶 Walking</option>
@@ -645,9 +597,8 @@ const fetchGoogleRoute = useCallback(async () => {
                   marginTop: "4px",
                   padding: "8px 12px",
                   borderRadius: "8px",
-                  border: darkMode ? "1px solid #4b5563" : "1px solid #ccc",
-                  background: darkMode ? "#1f2937" : "#f7f7f7",
-                  color: darkMode ? "#e5e7eb" : "#111827",
+                  border: "1px solid #ccc",
+                  background: "#f7f7f7",
                   cursor: "pointer",
                   fontSize: 13,
                 }}
@@ -660,13 +611,17 @@ const fetchGoogleRoute = useCallback(async () => {
           </section>
 
           {/* CENTER PANEL – MAP */}
-          <section style={centerPanelStyle(darkMode)}>
+          <section style={centerPanelStyle}>
             <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
               Map view
             </div>
+
             <div style={mapContainerStyle}>
               {isLoaded ? (
                 <GoogleMap
+                  key={
+                    origin + destination + stops + mode + showAlternatives
+                  }
                   onLoad={(map) => (mapRef.current = map)}
                   zoom={10}
                   center={{ lat: 39.5, lng: -98.35 }}
@@ -709,7 +664,7 @@ const fetchGoogleRoute = useCallback(async () => {
           </section>
 
           {/* RIGHT PANEL – route insights */}
-          <section style={rightPanelStyle(darkMode)}>
+          <section style={rightPanelStyle}>
             <h2
               style={{
                 fontSize: 16,
@@ -721,19 +676,13 @@ const fetchGoogleRoute = useCallback(async () => {
             </h2>
 
             <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <button style={chipStyle(darkMode)}>Best on-time</button>
-              <button style={chipStyle(darkMode)}>Shortest</button>
-              <button style={chipStyle(darkMode)}>Fewest transfers</button>
+              <button style={chipStyle}>Best on-time</button>
+              <button style={chipStyle}>Shortest</button>
+              <button style={chipStyle}>Fewest transfers</button>
             </div>
-
             {/* ROUTE LIST */}
             {routes.length === 0 ? (
-              <div
-                style={{
-                  fontSize: 13,
-                  color: darkMode ? "#9ca3af" : "#777",
-                }}
-              >
+              <div style={{ fontSize: 13, color: "#777" }}>
                 Enter origin and destination to see route suggestions.
               </div>
             ) : (
@@ -744,7 +693,6 @@ const fetchGoogleRoute = useCallback(async () => {
                   index={i}
                   mode={mode}
                   showWeatherDetails={showWeatherDetails}
-                  darkMode={darkMode}
                 />
               ))
             )}
@@ -752,13 +700,11 @@ const fetchGoogleRoute = useCallback(async () => {
         </main>
 
         {/* BOTTOM SUMMARY */}
-        <footer style={bottomStripStyle(darkMode)}>
+        <footer style={bottomStripStyle}>
           {routes.length > 0 ? (
             <>
-              <strong>Summary:</strong>{" "}
-              {routes[0].duration_min != null
-                ? `Fastest route is ${routes[0].duration_min} min and ${routes[0].distance_km} km. `
-                : "Route loaded. "}
+              <strong>Summary:</strong> Fastest route is{" "}
+              {routes[0].duration_min} min and {routes[0].distance_km} km.{" "}
               {routes[0].weather && (
                 <>
                   Current weather at origin: {routes[0].weather.temp} °C,{" "}
@@ -776,12 +722,12 @@ const fetchGoogleRoute = useCallback(async () => {
 }
 
 /* -------------------------------------------------------------------------- */
-/* RouteCard */
+/*                               RouteCard                                     */
 /* -------------------------------------------------------------------------- */
-function RouteCard({ route, index, mode, showWeatherDetails, darkMode }) {
+
+function RouteCard({ route, index, mode, showWeatherDetails }) {
   const label = String.fromCharCode(65 + index);
   const color = ["#4285F4", "#FF6347", "#2ECC71", "#8E44AD"][index % 4];
-  const [expandEvents, setExpandEvents] = useState(false);
 
   // weather icon
   let icon = "🌤️";
@@ -799,6 +745,7 @@ function RouteCard({ route, index, mode, showWeatherDetails, darkMode }) {
   let impactLevel = "low";
   if (alerts.some((a) => a.severity === "high")) impactLevel = "high";
   else if (alerts.some((a) => a.severity === "medium")) impactLevel = "medium";
+
   const impactLabel =
     impactLevel === "high"
       ? "High impact"
@@ -806,20 +753,15 @@ function RouteCard({ route, index, mode, showWeatherDetails, darkMode }) {
       ? "Moderate impact"
       : "Low impact";
 
-  const cardBg = darkMode ? "#020617" : "#fafafa";
-  const cardBorder = darkMode ? "#334155" : "#ddd";
-  const textMuted = darkMode ? "#9ca3af" : "#666";
-
   return (
     <div
       style={{
         marginBottom: "8px",
         padding: "10px 12px",
         borderRadius: "10px",
-        border: `1px solid ${cardBorder}`,
-        background: cardBg,
+        border: "1px solid #ddd",
+        background: "#fafafa",
         fontSize: "14px",
-        color: darkMode ? "#e5e7eb" : "#111827",
       }}
     >
       {/* Route basics */}
@@ -839,12 +781,10 @@ function RouteCard({ route, index, mode, showWeatherDetails, darkMode }) {
       <div>
         {route.duration_min} min • {route.distance_km} km
       </div>
-
-      <div style={{ color: textMuted }}>
+      <div style={{ color: "#666" }}>
         Stops: {route.stops?.join(" → ") || "None"}
       </div>
-
-      <div style={{ color: textMuted }}>Mode: {mode}</div>
+      <div style={{ color: "#666" }}>Mode: {mode}</div>
 
       {/* Weather card */}
       {showWeatherDetails && (
@@ -874,10 +814,12 @@ function RouteCard({ route, index, mode, showWeatherDetails, darkMode }) {
                   <span className="weather-metric-emoji">🌡️</span>
                   <span>{route.weather.feels_like} °C feels like</span>
                 </div>
+
                 <div className="weather-metric">
                   <span className="weather-metric-emoji">💧</span>
                   <span>{route.weather.humidity}% humidity</span>
                 </div>
+
                 <div className="weather-metric">
                   <span className="weather-metric-emoji">🌬️</span>
                   <span>{route.weather.wind_speed} m/s wind</span>
@@ -890,6 +832,7 @@ function RouteCard({ route, index, mode, showWeatherDetails, darkMode }) {
                   <span className="weather-metric-emoji">🌧️</span>
                   <span>{route.weather.rain_1h ?? 0} mm rain (last hour)</span>
                 </div>
+
                 <div className="weather-metric">
                   <span className="weather-metric-emoji">❄️</span>
                   <span>{route.weather.snow_1h ?? 0} mm snow (last hour)</span>
@@ -897,13 +840,7 @@ function RouteCard({ route, index, mode, showWeatherDetails, darkMode }) {
               </div>
             </div>
           ) : (
-            <div
-              style={{
-                marginTop: "6px",
-                fontSize: "13px",
-                color: textMuted,
-              }}
-            >
+            <div style={{ marginTop: "6px", fontSize: "13px", color: "#555" }}>
               Weather data unavailable for this route.
             </div>
           )}
@@ -911,342 +848,190 @@ function RouteCard({ route, index, mode, showWeatherDetails, darkMode }) {
       )}
 
       {/* Alerts */}
-      {renderAlerts(route.alerts?.custom_alerts, darkMode)}
-
-      {/* Events */}
-      {renderEvents(route.events_nearby, expandEvents, setExpandEvents, darkMode)}
+      {renderAlerts(route.alerts?.custom_alerts)}
+      {renderEvents(route.events_nearby)}
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* ALERTS RENDER */
+/*                               ALERTS RENDER                                 */
 /* -------------------------------------------------------------------------- */
-const severityColorsLight = {
+
+const severityColors = {
   high: "#ffe5e5",
   medium: "#fff5d6",
   low: "#e5ffe5",
 };
 
-const severityColorsDark = {
-  high: "#7f1d1d",
-  medium: "#78350f",
-  low: "#065f46",
-};
-
-const renderAlerts = (alerts, darkMode) => {
-  /* ------------------ NO ALERTS ------------------ */
+const renderAlerts = (alerts) => {
   if (!alerts || alerts.length === 0) {
     return (
-      <div
-        style={{
-          marginTop: "12px",
-          padding: "14px 16px",
-          borderRadius: "12px",
-          background: darkMode ? "#0f172a" : "#f0f4ff",
-          border: `1px solid ${darkMode ? "#1d4ed8" : "#ccd9ff"}`,
-          color: darkMode ? "#bfdbfe" : "#003eaa",
-          fontSize: "16px",
-          fontWeight: 600,
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-        }}
-      >
-        🌤️ No weather alerts for this route.
+      <div style={{ marginTop: "4px", fontSize: "13px", color: "#555" }}>
+        No weather alerts for this route.
       </div>
     );
   }
 
-  /* ------------------ ALERTS EXIST ------------------ */
-  return alerts.map((a, idx) => {
-    const bg = darkMode
-      ? severityColorsDark[a.severity] || "#111827"
-      : severityColorsLight[a.severity] || "#f5f5f5";
-
-    return (
-      <div
-        key={idx}
-        style={{
-          marginTop: "10px",
-          padding: "12px",
-          borderRadius: "12px",
-          background: bg,
-          border: "1px solid #ddd",
-          fontSize: "14px",
-          color: darkMode ? "#e5e7eb" : "#111827",
-        }}
-      >
-        <strong style={{ fontSize: "15px" }}>{a.title}</strong>
-
-        <div style={{ fontSize: "13px", marginTop: "4px" }}>{a.message}</div>
-
-        <div
-          style={{
-            fontSize: "12px",
-            fontStyle: "italic",
-            marginTop: "6px",
-            color: darkMode ? "#e5e7eb" : "#555",
-          }}
-        >
-          Severity: {a.severity}
-        </div>
+  return alerts.map((a, idx) => (
+    <div
+      key={idx}
+      style={{
+        marginTop: "6px",
+        padding: "8px 10px",
+        borderRadius: "8px",
+        border: "1px solid #ddd",
+        backgroundColor: severityColors[a.severity] || "#f5f5f5",
+        fontSize: "13px",
+      }}
+    >
+      <strong>{a.title}</strong>
+      <div style={{ marginTop: "2px" }}>{a.message}</div>
+      <div style={{ fontSize: "12px", color: "#777", marginTop: "2px" }}>
+        Severity: {a.severity}
       </div>
-    );
-  });
+    </div>
+  ));
 };
+/* -------------------------------------------------------------------------- */
+/*                                EVENTS RENDER                               */
+/* -------------------------------------------------------------------------- */
 
-/* -------------------------------------------------------------------------- */
-/* EVENTS RENDER */
-/* -------------------------------------------------------------------------- */
-const renderEvents = (eventsWrapper, expanded, setExpanded, darkMode) => {
+const renderEvents = (eventsWrapper) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
   const rawEvents = Array.isArray(eventsWrapper)
     ? eventsWrapper
     : eventsWrapper?.events ?? [];
 
-  /* ------------------ NO EVENTS AT ALL ------------------ */
   if (!rawEvents || rawEvents.length === 0) {
     return (
-      <div
-        style={{
-          marginTop: "10px",
-          padding: "14px 16px",
-          borderRadius: "12px",
-          background: darkMode ? "#450a0a" : "#fff5f5",
-          border: `1px solid ${darkMode ? "#fecaca" : "#ffcccc"}`,
-          color: darkMode ? "#fecaca" : "#b10000",
-          fontSize: "16px",
-          fontWeight: 600,
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-        }}
-      >
-        ⚠️ No events today along this route.
+      <div style={{ marginTop: "4px", fontSize: "14px", color: "#555" }}>
+        No events near this route.
       </div>
     );
   }
 
-  /* ------------------ GROUP BY DAY ------------------ */
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const groupsByDate = new Map();
+  const groups = new Map();
 
   for (const e of rawEvents) {
+    if (!e.url) continue;
+
+    const name = (e.name || e.title || "Untitled Event").trim();
+    const venue = (e.venue_name || e.venue || "").trim();
     const timeStr = e.date_time || e.start_time;
     if (!timeStr) continue;
 
     const time = new Date(timeStr);
-    const dateKey = new Date(time);
-    dateKey.setHours(0, 0, 0, 0);
+    const eventDate = new Date(time);
+    eventDate.setHours(0, 0, 0, 0);
 
-    const k = dateKey.getTime();
-    if (!groupsByDate.has(k)) groupsByDate.set(k, []);
+    if (eventDate.getTime() !== today.getTime()) continue;
 
-    groupsByDate.get(k).push({ base: e, time });
-  }
+    const key = `${name.toLowerCase()}::${venue.toLowerCase()}::${eventDate}`;
 
-  const todayEvents = groupsByDate.get(today.getTime()) || [];
-  const otherDayGroups = [...groupsByDate.entries()].filter(
-    ([key]) => key !== today.getTime()
-  );
-
-  const ui = [];
-
-  /* ------------------ TODAY SECTION ------------------ */
-  if (todayEvents.length === 0) {
-    ui.push(
-      <div
-        key="today-missing"
-        style={{
-          marginTop: "10px",
-          padding: "16px",
-          borderRadius: "12px",
-          background: darkMode ? "#450a0a" : "#fff5f5",
-          border: `1px solid ${darkMode ? "#fecaca" : "#ffcccc"}`,
-          color: darkMode ? "#fecaca" : "#b10000",
-          fontSize: "18px",
-          fontWeight: 700,
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
-        ⚠️ No events today along this route.
-      </div>
-    );
-  } else {
-    ui.push(
-      <div
-        key="today-header"
-        style={{
-          marginTop: "10px",
-          fontSize: "17px",
-          fontWeight: 700,
-          color: darkMode ? "#bfdbfe" : "#0055cc",
-        }}
-      >
-        🎟️ Events Today Along This Route
-      </div>
-    );
-
-    todayEvents.forEach((ev, idx) => {
-      const base = ev.base;
-      const time = ev.time;
-
-      ui.push(
-        <div
-          key={`today-${idx}`}
-          style={{
-            marginTop: "10px",
-            padding: "12px",
-            borderRadius: "12px",
-            border: `1px solid ${darkMode ? "#1d4ed8" : "#cce0ff"}`,
-            background: darkMode ? "#0f172a" : "#f0f6ff",
-            color: darkMode ? "#e5e7eb" : "#111827",
-          }}
-        >
-          <strong
-            style={{
-              fontSize: "15px",
-              color: darkMode ? "#bfdbfe" : "#003e99",
-            }}
-          >
-            {base.name || base.title}
-          </strong>
-
-          <div style={{ marginTop: 4, fontSize: 13 }}>
-            {time.toLocaleString()}
-          </div>
-
-          {base.venue_name && (
-            <div
-              style={{
-                fontSize: 13,
-                color: darkMode ? "#e5e7eb" : "#444",
-              }}
-            >
-              Venue: {base.venue_name}
-            </div>
-          )}
-
-          <a
-            href={base.url}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              color: darkMode ? "#93c5fd" : "#0066ff",
-              marginTop: 4,
-              display: "inline-block",
-              fontSize: 13,
-            }}
-          >
-            View Event →
-          </a>
-        </div>
-      );
-    });
-  }
-
-  /* ------------------ OTHER DAYS (ACCORDION) ------------------ */
-  if (otherDayGroups.length > 0) {
-    ui.push(
-      <div
-        key="accordion-header"
-        onClick={() => setExpanded(!expanded)}
-        style={{
-          marginTop: "16px",
-          padding: "12px",
-          borderRadius: "10px",
-          background: darkMode ? "#020617" : "#fafafa",
-          border: `1px solid ${darkMode ? "#4b5563" : "#ddd"}`,
-          fontSize: "15px",
-          fontWeight: 700,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          color: darkMode ? "#e5e7eb" : "#111827",
-        }}
-      >
-        <span>📅 Heads Up: Events Coming Up on Other Days</span>
-        <span style={{ fontSize: "20px" }}>{expanded ? "▲" : "▼"}</span>
-      </div>
-    );
-
-    if (expanded) {
-      otherDayGroups.forEach(([dateKey, events], idx) => {
-        const dateLabel = new Date(Number(dateKey)).toDateString();
-
-        ui.push(
-          <div
-            key={`day-${idx}`}
-            style={{
-              marginTop: "10px",
-              fontSize: "15px",
-              fontWeight: 600,
-              color: darkMode ? "#e5e7eb" : "#111827",
-            }}
-          >
-            {dateLabel}
-          </div>
-        );
-
-        events.forEach((ev, j) => {
-          const base = ev.base;
-          const time = ev.time;
-
-          ui.push(
-            <div
-              key={`other-${idx}-${j}`}
-              style={{
-                marginTop: "8px",
-                padding: "12px",
-                borderRadius: "10px",
-                border: `1px solid ${darkMode ? "#4b5563" : "#eee"}`,
-                background: darkMode ? "#020617" : "#fff",
-                color: darkMode ? "#e5e7eb" : "#111827",
-              }}
-            >
-              <strong style={{ fontSize: "15px" }}>
-                {base.name || base.title}
-              </strong>
-
-              <div style={{ marginTop: 4, fontSize: 13 }}>
-                {time.toLocaleString()}
-              </div>
-
-              {base.venue_name && (
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: darkMode ? "#e5e7eb" : "#555",
-                  }}
-                >
-                  Venue: {base.venue_name}
-                </div>
-              )}
-
-              <a
-                href={base.url}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  color: darkMode ? "#93c5fd" : "#0066ff",
-                  marginTop: 4,
-                  display: "inline-block",
-                  fontSize: 13,
-                }}
-              >
-                View Event →
-              </a>
-            </div>
-          );
-        });
+    if (!groups.has(key)) {
+      groups.set(key, {
+        base: e,
+        showtimes: [],
       });
     }
+
+    groups.get(key).showtimes.push(time);
   }
 
-  return ui;
+  let groupedEvents = Array.from(groups.values()).filter(
+    (g) => g.showtimes.length > 0
+  );
+
+  if (groupedEvents.length === 0) {
+    return (
+      <div style={{ marginTop: "4px", fontSize: "14px", color: "#555" }}>
+        No upcoming ticketed events near this route.
+      </div>
+    );
+  }
+
+  return groupedEvents.map(({ base, showtimes }, idx) => (
+    <div
+      key={idx}
+      style={{
+        marginTop: "10px",
+        padding: "12px",
+        borderRadius: "10px",
+        border: "1px solid #cce0ff",
+        backgroundColor: "#f0f6ff",
+      }}
+    >
+      {/* Title */}
+      <strong style={{ fontSize: "16px", color: "#0055cc" }}>
+        {base.name || base.title || "Untitled Event"}
+      </strong>
+
+      {/* Link */}
+      <div style={{ marginTop: "4px" }}>
+        <a
+          href={base.url}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: "#0066ff", textDecoration: "underline" }}
+        >
+          View Event →
+        </a>
+      </div>
+
+      {/* Showtimes */}
+      {showtimes.length > 0 && (
+        <div style={{ marginTop: "4px", fontSize: "13px", color: "#333" }}>
+          {showtimes.length === 1 ? "Showtime:" : "Showtimes:"}{" "}
+          {showtimes.map((t) => t.toLocaleString()).join(" • ")}
+        </div>
+      )}
+
+      {/* Venue */}
+      {base.venue_name && (
+        <div style={{ fontSize: "13px", color: "#444" }}>
+          Venue: {base.venue_name}
+        </div>
+      )}
+
+      {/* Distance */}
+      {base.distance_from_route_m && (
+        <div style={{ fontSize: "13px", color: "#777", marginTop: "3px" }}>
+          {Math.round(base.distance_from_route_m)} m from route
+        </div>
+      )}
+
+      {/* Fallback venue */}
+      {base.venue && (
+        <div style={{ fontSize: "13px", color: "#555", marginTop: "3px" }}>
+          Venue: {base.venue}
+        </div>
+      )}
+
+      {/* Capacity */}
+      {base.capacity && (
+        <div style={{ fontSize: "13px", color: "#333", marginTop: "3px" }}>
+          Capacity: {base.capacity.toLocaleString()}
+        </div>
+      )}
+
+      {/* Address */}
+      {base.address && (
+        <div
+          style={{
+            fontSize: "12px",
+            color: "#666",
+            marginTop: "4px",
+            fontStyle: "italic",
+          }}
+        >
+          {base.address}
+        </div>
+      )}
+    </div>
+  ));
 };
+
+/* ---------------- END OF FILE ---------------- */

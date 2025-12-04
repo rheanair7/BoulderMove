@@ -282,3 +282,52 @@
   font-size: 11px;
   color: #9ca3af;
 }
+/* Light mode (default) */
+.light-mode {
+  background: #f5f5f8;
+  color: #000;
+}
+/* Force dark mode background for entire app */
+.dark-mode {
+  background-color: #1a1a1d !important;
+  color: #f4f4f4 !important;
+}
+
+/* Panels & sections override */
+.dark-mode section,
+.dark-mode header,
+.dark-mode main,
+.dark-mode footer {
+  background-color: #1e1e1e !important;
+  color: #f4f4f4 !important;
+  border-color: #444 !important;
+}
+
+/* Inputs in dark mode */
+.dark-mode input,
+.dark-mode select,
+.dark-mode textarea {
+  background-color: #333 !important;
+  color: #eee !important;
+  border: 1px solid #555 !important;
+}
+
+/* Buttons in dark mode */
+.dark-mode button {
+  background-color: #333 !important;
+  color: #fff !important;
+  border-color: #555 !important;
+}
+
+/* Weather cards dark mode */
+.dark-mode .weather-card,
+.dark-mode .impact-badge {
+  background-color: #2a2a2d !important;
+  color: white !important;
+}
+
+/* Right panel event cards */
+.dark-mode .event-card {
+  background-color: #2a2a2d !important;
+  color: white !important;
+}

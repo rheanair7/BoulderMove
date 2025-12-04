@@ -129,7 +129,9 @@ def main():
     # Smaller bounding box around central Denver
     # bbox = (north, south, east, west)
    # (north, south, east, west)
-    bbox = (40.09, 39.95, -105.18, -105.32)
+   bbox = (40.12, 39.90, -105.10, -105.30)
+   # bbox = (40.09, 39.95, -105.18, -105.32)
+
 
 
     # 1) Build walking graph
