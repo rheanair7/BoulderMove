@@ -235,7 +235,90 @@ def plan_transit_full(req: PlanTransitRequest):
         "events_nearby": events,
         "geometry": full_geometry
     }
+@app.get("/google_directions")
+def google_directions_proxy(
+    origin: str,
+    destination: str,
+    mode: str = "driving",
+    alternatives: str = "false"
+):
+    import requests
+    import os
+    import polyline
 
+    print("📥 GOOGLE DIRECTIONS REQUEST")
+    print("   origin=", origin)
+    print("   destination=", destination)
+    print("   mode=", mode)
+
+    api_key = os.getenv("GOOGLE_MAPS_API_KEY")
+    if not api_key:
+        print("❌ Missing GOOGLE_MAPS_API_KEY")
+        return {"routes": [], "error": "missing_api_key"}
+
+    url = "https://maps.googleapis.com/maps/api/directions/json"
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "mode": mode,
+        "alternatives": alternatives,
+        "key": api_key,
+    }
+
+    r = requests.get(url, params=params)
+    data = r.json()
+
+    print("🔍 GOOGLE STATUS:", data.get("status"))
+
+    # If Google failed → return minimal structure
+    if data.get("status") != "OK" or not data.get("routes"):
+        return {
+            "status": data.get("status"),
+            "routes": [],
+            "geometry": [],
+            "weather": None,
+            "events_nearby": []
+        }
+
+    # Decode polyline for the FIRST route
+    overview = data["routes"][0]["overview_polyline"]["points"]
+    coords = polyline.decode(overview)
+    geometry = [{"lat": lat, "lon": lon} for lat, lon in coords]
+
+    # Parse origin + destination lat/lon from query
+    try:
+        lat_o, lon_o = map(float, origin.split(","))
+        lat_d, lon_d = map(float, destination.split(","))
+    except:
+        lat_o = lon_o = lat_d = lon_d = None
+
+    # WEATHER
+    weather = None
+    if lat_o is not None:
+        try:
+            weather_raw = get_weather_and_alerts(lat_o, lon_o)
+            weather = format_weather(weather_raw)
+        except Exception as e:
+            print("⚠ Weather failed:", e)
+
+    # EVENTS
+    try:
+        events = events_near_route([(p["lat"], p["lon"]) for p in geometry])
+    except Exception as e:
+        print("⚠ Events failed:", e)
+        events = []
+
+    return {
+        "status": data.get("status"),
+        "routes": data.get("routes", []),
+        "geometry": geometry,
+        "weather": weather,
+        "events_nearby": events,
+        "origin_lat": lat_o,
+        "origin_lon": lon_o,
+        "destination_lat": lat_d,
+        "destination_lon": lon_d
+    }
 
 # Run locally
 if __name__ == "__main__":

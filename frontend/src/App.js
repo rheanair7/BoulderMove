@@ -226,21 +226,39 @@ const fetchGoogleRoute = useCallback(async () => {
     }
 
     const mappedRoutes = data.routes.map((route) => {
-      const leg = route.legs[0];
-      const pts = polyline
+    const leg = route.legs[0];
+
+    const pts = polyline
         .decode(route.overview_polyline.points)
         .map(([lat, lng]) => ({ lat, lng }));
 
-      return {
+    return {
         summary: route.summary || `${mode} route`,
         duration_min: leg.duration?.value / 60 || null,
         distance_km: leg.distance?.value / 1000 || null,
         polylineCoords: pts,
-        weather: null,
-        alerts: null,
-        events_nearby: [],
-      };
+
+        // ⭐ FIXED (MARKERS WILL SHOW)
+        start_location: {
+        lat: data.origin_lat,
+        lng: data.origin_lon,
+        },
+        end_location: {
+        lat: data.destination_lat,
+        lng: data.destination_lon,
+        },
+
+        // ⭐ FIXED (WEATHER WILL SHOW)
+        weather: data.weather || null,
+
+        // ⭐ FIXED (WEATHER ALERTS WILL SHOW)
+        alerts: { custom_alerts: data.weather?.custom_alerts || [] },
+
+        // ⭐ FIXED (EVENTS WILL SHOW)
+        events_nearby: data.events_nearby || [],
+    };
     });
+
 
     setRoutes(mappedRoutes);
   } catch (err) {
