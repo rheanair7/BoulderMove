@@ -10,6 +10,70 @@ import { Autocomplete } from "@react-google-maps/api";
 import polyline from "@mapbox/polyline";
 import "./App.css";
 
+function makeFakeRoute(origin, destination) {
+  const points = [];
+
+  const lat1 = origin.lat;
+  const lon1 = origin.lon;
+  const lat2 = destination.lat;
+  const lon2 = destination.lon;
+
+  const steps = 8; // number of bends/segments
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+
+    // Base interpolation
+    let lat = lat1 * (1 - t) + lat2 * t;
+    let lon = lon1 * (1 - t) + lon2 * t;
+
+    // Add turns & wiggles
+    const wiggle = 0.002 * Math.sin(t * Math.PI * 3);   // 3 waves
+    const offset = 0.0015 * Math.cos(t * Math.PI * 2);  // 2 offsets
+
+    lat += wiggle;
+    lon += offset;
+
+    points.push({ lat, lng: lon });
+  }
+
+  return points;
+}
+ 
+async function scoreRouteML(routeFeatures) {
+  try {
+    const res = await fetch(
+      "https://bouldermove-ml-499631536778.us-central1.run.app/score_route",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(routeFeatures),
+      }
+    );
+
+    if (!res.ok) throw new Error("ML scoring failed");
+
+    return await res.json();
+  } catch (err) {
+    console.error("ML error:", err);
+    return { prob_on_time: null, expected_delay_min: null };
+  }
+}
+function buildMLFeatures(route, weather) {
+  return {
+    duration_min: route.duration_min ?? 0,
+    buffer_min: 5, // constant buffer for now, or make UI-input later
+    num_transfers: 0, // non-transit routes have no transfers
+    rain_1h: weather?.rain_1h ?? 0,
+    snow_1h: weather?.snow_1h ?? 0,
+    wind_speed: weather?.wind_speed ?? 0,
+    temp: weather?.temp ?? 0,
+    event_risk: route.events_nearby?.length > 0 ? 1.0 : 0.0,
+    hour: new Date().getHours(),
+    is_weekend: [0,6].includes(new Date().getDay()),
+  };
+}
+
 const GOOGLE_MAP_LIBRARIES = ["places"];
 
 /* ---------------- MAP STYLE ---------------- */
@@ -231,6 +295,7 @@ const fetchGoogleRoute = useCallback(async () => {
     const pts = polyline
         .decode(route.overview_polyline.points)
         .map(([lat, lng]) => ({ lat, lng }));
+      
 
     return {
         summary: route.summary || `${mode} route`,
@@ -256,10 +321,19 @@ const fetchGoogleRoute = useCallback(async () => {
 
         // ⭐ FIXED (EVENTS WILL SHOW)
         events_nearby: data.events_nearby || [],
+        on_time_probability: null,
+        on_time: null,
+
     };
     });
 
+  for (let r of mappedRoutes) {
+      const features = buildMLFeatures(r, r.weather);
+      const ml = await scoreRouteML(features);
 
+      r.on_time_probability = ml.prob_on_time;
+      r.expected_delay_min = ml.expected_delay_min;
+}
     setRoutes(mappedRoutes);
   } catch (err) {
     console.error("Proxy google_directions fetch failed:", err);
@@ -308,7 +382,7 @@ const fetchGoogleRoute = useCallback(async () => {
             ? `Transit via ${
                 data.transit.legs[0].route_id || data.transit.legs[0].trip_id
               }`
-            : "Walking only",
+             : "Walk -> Transit  -> Walk",
         duration_min: null,
         distance_km: null,
         polylineCoords: [
@@ -332,6 +406,9 @@ const fetchGoogleRoute = useCallback(async () => {
         alerts: { custom_alerts: data.weather?.custom_alerts || [] },
         events_nearby: data.events_nearby || [],
         transit_raw: data,
+        on_time_probability: data.on_time_probability,
+        on_time: data.on_time,
+
       };
 
       setRoutes([routeObj]);
@@ -857,6 +934,51 @@ function RouteCard({ route, index, mode, showWeatherDetails, darkMode }) {
       <div>
         {route.duration_min} min • {route.distance_km} km
       </div>
+      
+            {/* ---------------- ML ON-TIME PREDICTION ---------------- */}
+      {route.on_time_probability !== undefined && route.on_time_probability !== null && (
+        <div
+          style={{
+            marginTop: "6px",
+            padding: "8px 12px",
+            borderRadius: "8px",
+            background: darkMode ? "#0f172a" : "#eef6ff",
+            border: `1px solid ${darkMode ? "#1d4ed8" : "#bcd2ff"}`,
+            fontSize: "14px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <span>
+            <strong>On-time probability:</strong>{" "}
+            {(route.on_time_probability * 100).toFixed(1)}%
+          </span>
+
+          <span
+            style={{
+              padding: "4px 10px",
+              borderRadius: "999px",
+              fontSize: "12px",
+              fontWeight: 600,
+              color: "white",
+              background:
+                route.on_time_probability >= 0.75
+                  ? "#16a34a" /* green */
+                  : route.on_time_probability >= 0.5
+                  ? "#eab308" /* yellow */
+                  : "#dc2626", /* red */
+            }}
+          >
+            {route.on_time_probability >= 0.75
+              ? "Likely On Time"
+              : route.on_time_probability >= 0.5
+              ? "Possibly Delayed"
+              : "High Delay Risk"}
+          </span>
+        </div>
+      )}
+
 
       <div style={{ color: textMuted }}>
         Stops: {route.stops?.join(" → ") || "None"}
@@ -1268,3 +1390,5 @@ const renderEvents = (eventsWrapper, expanded, setExpanded, darkMode) => {
 
   return ui;
 };
+
+/* -------------------------------------------------------------------------- */

@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+google-cloud-storage
+scikit-learn
+numpy
+joblib
+xgboost==1.7.6

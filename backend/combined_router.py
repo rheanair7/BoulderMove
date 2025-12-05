@@ -28,7 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Globals
+# ------------------------------- GLOBALS -----------------------------------
 G = None
 nodes_gdf = None
 node_ids = None
@@ -38,7 +38,29 @@ stops_gdf = None
 graph_crs = None
 raptor = None
 
+# ------------------------------- ML API -----------------------------------
+ML_URL = "https://bouldermove-ml-499631536778.us-central1.run.app/score_route"
 
+
+def score_route(features: dict):
+    try:
+        print("➡ ML INPUT:", features)
+        r = requests.post(ML_URL, json=features, timeout=10)
+        r.raise_for_status()
+        out = r.json()
+        print("⬅ ML OUTPUT:", out)
+
+        return {
+            "prob_on_time": out.get("prob_on_time"),
+            "expected_delay_min": out.get("expected_delay_min"),
+        }
+
+    except Exception as e:
+        print("❌ ML scoring failed:", e)
+        return {"prob_on_time": None, "expected_delay_min": None}
+
+
+# ------------------------------- MODELS -----------------------------------
 class Location(BaseModel):
     lat: float
     lon: float
@@ -50,7 +72,7 @@ class PlanTransitRequest(BaseModel):
     depart_at: str | None = None
 
 
-# ------------------- LOAD DATA ----------------------
+# ------------------------------- LOAD DATA --------------------------------
 @app.on_event("startup")
 def load_data():
     global G, nodes_gdf, node_ids, node_x, node_y, stops_gdf, graph_crs, raptor
@@ -59,9 +81,7 @@ def load_data():
     G = ox.load_graphml(os.path.join(OUTPUT, "walk_graph.graphml"))
     graph_crs = G.graph["crs"]
 
-    nodes = ox.graph_to_gdfs(G, nodes=True, edges=False)
-    nodes = nodes.to_crs(graph_crs)
-
+    nodes = ox.graph_to_gdfs(G, nodes=True, edges=False).to_crs(graph_crs)
     nodes_gdf = nodes
     node_ids = np.array(nodes.index)
     node_x = nodes.geometry.x.to_numpy()
@@ -74,27 +94,26 @@ def load_data():
     stops_proj = stops.to_crs(graph_crs)
     stops["_x_proj"] = stops_proj.geometry.x
     stops["_y_proj"] = stops_proj.geometry.y
-
     stops_gdf = stops
 
     print("Loading RAPTOR engine…")
     raptor = raptor_engine.RaptorEngine(
         gtfs_feeds=[
             os.path.join(DATA_DIR, "gtfs_rtd.zip"),
-            os.path.join(DATA_DIR, "gtfs_bustang.zip")
+            os.path.join(DATA_DIR, "gtfs_bustang.zip"),
         ],
-        stops_geojson_path=os.path.join(OUTPUT, "stops.geojson")
+        stops_geojson_path=os.path.join(OUTPUT, "stops.geojson"),
     )
 
     print("Backend startup complete.")
 
 
-# ------------------ HELPERS -----------------------
+# ------------------------------- HELPERS ----------------------------------
 def nearest_graph_node(lat, lon):
     pt = gpd.GeoSeries([Point(lon, lat)], crs="EPSG:4326").to_crs(graph_crs)[0]
     dx = node_x - pt.x
     dy = node_y - pt.y
-    return node_ids[np.argmin(dx*dx + dy*dy)]
+    return node_ids[np.argmin(dx * dx + dy * dy)]
 
 
 def path_to_latlon(path):
@@ -108,7 +127,7 @@ def nearest_gtfs_stop(lat, lon):
     pt = gpd.GeoSeries([Point(lon, lat)], crs="EPSG:4326").to_crs(graph_crs)[0]
     dx = stops_gdf["_x_proj"].to_numpy() - pt.x
     dy = stops_gdf["_y_proj"].to_numpy() - pt.y
-    idx = np.argmin(dx*dx + dy*dy)
+    idx = np.argmin(dx * dx + dy * dy)
     return str(stops_gdf.iloc[idx]["stop_id"])
 
 
@@ -129,9 +148,8 @@ def format_weather(raw):
     }
 
 
-# ---------------- GOOGLE BACKUP FUNCTION ----------------
-
-def google_transit_route(origin, destination):
+# ---------------------- GOOGLE FALLBACK (TRANSIT) -------------------------
+def google_transit_route(origin: Location, destination: Location):
     key = os.getenv("GOOGLE_MAPS_API_KEY")
     if not key:
         print("[GOOGLE BACKUP] Missing API key.")
@@ -141,9 +159,7 @@ def google_transit_route(origin, destination):
         "https://maps.googleapis.com/maps/api/directions/json?"
         f"origin={origin.lat},{origin.lon}&"
         f"destination={destination.lat},{destination.lon}&"
-        f"mode=transit&"
-        f"departure_time=now&"
-        f"key={key}"
+        f"mode=transit&departure_time=now&key={key}"
     )
 
     try:
@@ -156,74 +172,154 @@ def google_transit_route(origin, destination):
             return [{"lat": lat, "lon": lon} for lat, lon in coords]
 
         return None
-
     except Exception as e:
         print("[GOOGLE BACKUP ERROR]", e)
         return None
 
 
-# --------------- MAIN ROUTE ----------------------
+# --------------------------- MAIN API -------------------------------------
 @app.post("/plan_transit_full")
 def plan_transit_full(req: PlanTransitRequest):
-
+    """
+    Walk -> transit -> walk routing with RAPTOR, plus weather, events, and ML scoring.
+    Falls back to Google Transit if RAPTOR finds no journey.
+    """
     departure_iso = req.depart_at or datetime.now().replace(microsecond=0).isoformat()
     print("Using departure time:", departure_iso)
 
-    # ORIGIN STOP
+    # ORIGIN / DESTINATION STOPS
     origin_stop = nearest_gtfs_stop(req.origin.lat, req.origin.lon)
     origin_match = stops_gdf.loc[stops_gdf["stop_id"] == origin_stop]
 
-    # DEST STOP
     dest_stop = nearest_gtfs_stop(req.destination.lat, req.destination.lon)
     dest_match = stops_gdf.loc[stops_gdf["stop_id"] == dest_stop]
 
     # WALK TO FIRST STOP
-    walk1_path = nx.shortest_path(G,
-                                  nearest_graph_node(req.origin.lat, req.origin.lon),
-                                  int(origin_match["nearest_node"].iloc[0]),
-                                  weight="length")
+    walk1_path = nx.shortest_path(
+        G,
+        nearest_graph_node(req.origin.lat, req.origin.lon),
+        int(origin_match["nearest_node"].iloc[0]),
+        weight="length",
+    )
     walk1_latlon = path_to_latlon(walk1_path)
+    print("[DEBUG] walk1_latlon points:", len(walk1_latlon))
 
-    # TRANSIT USING RAPTOR
+    # TRANSIT (RAPTOR)
     transit_legs = raptor.plan(origin_stop, dest_stop, departure_iso)
+    print("[DEBUG] transit_legs:", len(transit_legs))
 
-    # FALLBACK IF RAPTOR FAILS
+    # ----------------- FALLBACK IF RAPTOR FAILS -------------------
     if not transit_legs or len(transit_legs) == 0:
         print("⚠ RAPTOR FAILED → Using Google Transit API fallback")
         google_geom = google_transit_route(req.origin, req.destination)
 
-        if google_geom:
-            return {
-                "mode": "google_transit_fallback",
-                "walk_to_stop": [],
-                "transit": [],
-                "walk_to_destination": [],
-                "geometry": google_geom,
-                "weather": format_weather(get_weather_and_alerts(req.origin.lat, req.origin.lon)),
-                "events_nearby": []
-            }
-        else:
+        if not google_geom:
             return {"error": "No route found by RAPTOR or Google Maps."}
 
-    # BUILD RAPTOR GEOMETRY
+        weather = format_weather(get_weather_and_alerts(req.origin.lat, req.origin.lon))
+        events = events_near_route([(p["lat"], p["lon"]) for p in google_geom])
+
+        duration_min = 0.0  # unknown; could be improved later
+        num_transfers = 0
+        buffer_min = 5
+
+        rain_1h = weather.get("rain_1h", 0) if weather else 0
+        snow_1h = weather.get("snow_1h", 0) if weather else 0
+        wind_speed = weather.get("wind_speed", 0) if weather else 0
+        temp = weather.get("temp", 0) if weather else 0
+        event_risk = 1.0 if events else 0.0
+
+        hour = datetime.now().hour
+        is_weekend = datetime.now().weekday() >= 5
+
+        features = {
+            "duration_min": float(duration_min),
+            "buffer_min": float(buffer_min),
+            "num_transfers": int(num_transfers),
+            "rain_1h": float(rain_1h),
+            "snow_1h": float(snow_1h),
+            "wind_speed": float(wind_speed),
+            "temp": float(temp),
+            "event_risk": float(event_risk),
+            "hour": int(hour),
+            "is_weekend": bool(is_weekend),
+        }
+
+        ml_output = score_route(features)
+
+        return {
+            "mode": "google_transit_fallback",
+            "origin_gtfs_stop": origin_stop,
+            "destination_gtfs_stop": dest_stop,
+            "walk_to_stop": [],
+            "transit": [],
+            "walk_to_destination": [],
+            "geometry": google_geom,
+            "weather": weather,
+            "events_nearby": events,
+            "on_time_probability": ml_output.get("prob_on_time"),
+            "expected_delay_min": ml_output.get("expected_delay_min"),
+            "ml_features_used": features,
+        }
+
+    # ----------------- NORMAL RAPTOR FLOW --------------------------
+    # RAPTOR geometry (stops along the route)
     transit_geometry = []
     for leg in transit_legs:
         for sid in leg["intermediate_stops"]:
             row = stops_gdf.loc[stops_gdf["stop_id"] == sid].iloc[0]
-            transit_geometry.append({"lat": row["stop_lat"], "lon": row["stop_lon"]})
+            transit_geometry.append(
+                {"lat": row["stop_lat"], "lon": row["stop_lon"]}
+            )
+    print("[DEBUG] transit_geometry points:", len(transit_geometry))
 
     # WALK TO DESTINATION
-    walk3_path = nx.shortest_path(G,
-                                  int(dest_match["nearest_node"].iloc[0]),
-                                  nearest_graph_node(req.destination.lat, req.destination.lon),
-                                  weight="length")
+    walk3_path = nx.shortest_path(
+        G,
+        int(dest_match["nearest_node"].iloc[0]),
+        nearest_graph_node(req.destination.lat, req.destination.lon),
+        weight="length",
+    )
     walk3_latlon = path_to_latlon(walk3_path)
+    print("[DEBUG] walk3_latlon points:", len(walk3_latlon))
 
-    # WEATHER + EVENTS
+    # WEATHER + EVENTS (now that geometry exists)
     weather = format_weather(get_weather_and_alerts(req.origin.lat, req.origin.lon))
     full_geometry = walk1_latlon + transit_geometry + walk3_latlon
+    print("[DEBUG] full_geometry points:", len(full_geometry))
+
     events = events_near_route([(p["lat"], p["lon"]) for p in full_geometry])
 
+    # ------------------ ML FEATURE EXTRACTION ----------------------
+    duration_min = sum(leg.get("duration_min", 0) for leg in transit_legs)
+    num_transfers = max(0, len(transit_legs) - 1)
+    buffer_min = 5
+
+    rain_1h = weather.get("rain_1h", 0) if weather else 0
+    snow_1h = weather.get("snow_1h", 0) if weather else 0
+    wind_speed = weather.get("wind_speed", 0) if weather else 0
+    temp = weather.get("temp", 0) if weather else 0
+    event_risk = 1.0 if len(events) > 0 else 0.0
+
+    hour = datetime.now().hour
+    is_weekend = datetime.now().weekday() >= 5
+
+    features = {
+        "duration_min": float(duration_min),
+        "buffer_min": float(buffer_min),
+        "num_transfers": int(num_transfers),
+        "rain_1h": float(rain_1h),
+        "snow_1h": float(snow_1h),
+        "wind_speed": float(wind_speed),
+        "temp": float(temp),
+        "event_risk": float(event_risk),
+        "hour": int(hour),
+        "is_weekend": bool(is_weekend),
+    }
+
+    ml_output = score_route(features)
+
+    # ------------------ FINAL RESPONSE -----------------------------
     return {
         "mode": "walk_transit_walk",
         "origin_gtfs_stop": origin_stop,
@@ -233,24 +329,18 @@ def plan_transit_full(req: PlanTransitRequest):
         "walk_to_destination": walk3_latlon,
         "weather": weather,
         "events_nearby": events,
-        "geometry": full_geometry
+        "geometry": full_geometry,
+        "on_time_probability": ml_output.get("prob_on_time"),
+        "expected_delay_min": ml_output.get("expected_delay_min"),
+        "ml_features_used": features,
     }
+
+
+# ------------------------- GOOGLE DIRECTIONS PROXY ------------------------
 @app.get("/google_directions")
 def google_directions_proxy(
-    origin: str,
-    destination: str,
-    mode: str = "driving",
-    alternatives: str = "false"
+    origin: str, destination: str, mode: str = "driving", alternatives: str = "false"
 ):
-    import requests
-    import os
-    import polyline
-
-    print("📥 GOOGLE DIRECTIONS REQUEST")
-    print("   origin=", origin)
-    print("   destination=", destination)
-    print("   mode=", mode)
-
     api_key = os.getenv("GOOGLE_MAPS_API_KEY")
     if not api_key:
         print("❌ Missing GOOGLE_MAPS_API_KEY")
@@ -268,59 +358,67 @@ def google_directions_proxy(
     r = requests.get(url, params=params)
     data = r.json()
 
-    print("🔍 GOOGLE STATUS:", data.get("status"))
-
-    # If Google failed → return minimal structure
     if data.get("status") != "OK" or not data.get("routes"):
-        return {
-            "status": data.get("status"),
-            "routes": [],
-            "geometry": [],
-            "weather": None,
-            "events_nearby": []
-        }
+        return {"status": data.get("status"), "routes": []}
 
-    # Decode polyline for the FIRST route
-    overview = data["routes"][0]["overview_polyline"]["points"]
-    coords = polyline.decode(overview)
+    # --- Decode geometry for map + events + ML ---
+    coords = polyline.decode(data["routes"][0]["overview_polyline"]["points"])
     geometry = [{"lat": lat, "lon": lon} for lat, lon in coords]
 
-    # Parse origin + destination lat/lon from query
-    try:
-        lat_o, lon_o = map(float, origin.split(","))
-        lat_d, lon_d = map(float, destination.split(","))
-    except:
-        lat_o = lon_o = lat_d = lon_d = None
+    # --- Extract origin/destination lat/lon ---
+    origin_lat, origin_lon = map(float, origin.split(","))
+    dest_lat, dest_lon = map(float, destination.split(","))
 
-    # WEATHER
-    weather = None
-    if lat_o is not None:
-        try:
-            weather_raw = get_weather_and_alerts(lat_o, lon_o)
-            weather = format_weather(weather_raw)
-        except Exception as e:
-            print("⚠ Weather failed:", e)
+    # --- Weather ---
+    raw_weather = get_weather_and_alerts(origin_lat, origin_lon)
+    weather = format_weather(raw_weather)
 
-    # EVENTS
-    try:
-        events = events_near_route([(p["lat"], p["lon"]) for p in geometry])
-    except Exception as e:
-        print("⚠ Events failed:", e)
-        events = []
+    # --- Events along route ---
+    events = events_near_route([(p["lat"], p["lon"]) for p in geometry])
 
-    return {
-        "status": data.get("status"),
-        "routes": data.get("routes", []),
-        "geometry": geometry,
-        "weather": weather,
-        "events_nearby": events,
-        "origin_lat": lat_o,
-        "origin_lon": lon_o,
-        "destination_lat": lat_d,
-        "destination_lon": lon_d
+    # --- ML scoring ---
+    duration_sec = data["routes"][0]["legs"][0]["duration"]["value"]
+    duration_min = duration_sec / 60.0 if duration_sec is not None else 0.0
+
+    rain_1h = weather.get("rain_1h", 0) if weather else 0
+    snow_1h = weather.get("snow_1h", 0) if weather else 0
+    wind_speed = weather.get("wind_speed", 0) if weather else 0
+    temp = weather.get("temp", 0) if weather else 0
+    event_risk = 1.0 if len(events) > 0 else 0.0
+
+    features = {
+        "duration_min": float(duration_min),
+        "buffer_min": 5.0,
+        "num_transfers": 0,
+        "rain_1h": float(rain_1h),
+        "snow_1h": float(snow_1h),
+        "wind_speed": float(wind_speed),
+        "temp": float(temp),
+        "event_risk": float(event_risk),
+        "hour": datetime.now().hour,
+        "is_weekend": datetime.now().weekday() >= 5,
     }
 
-# Run locally
+    ml_out = score_route(features)
+
+    return {
+        "status": "OK",
+        "geometry": geometry,
+        "routes": data["routes"],
+        "origin_lat": origin_lat,
+        "origin_lon": origin_lon,
+        "destination_lat": dest_lat,
+        "destination_lon": dest_lon,
+        "weather": weather,
+        "events_nearby": events,
+        "on_time_probability": ml_out.get("prob_on_time"),
+        "expected_delay_min": ml_out.get("expected_delay_min"),
+        "ml_features_used": features,
+    }
+
+
+# ----------------------------- LOCAL RUNNER -------------------------------
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8080)))

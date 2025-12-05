@@ -6,3 +6,65 @@
 **/cache
 **/venv
 **/colorado.osm.pbf
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.iml
+
+########################
+# Python
+########################
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+########################
+# Environment / secrets
+########################
+.env
+.env.*
+*.env
+
+########################
+# Data and model artifacts
+########################
+data/
+*.joblib
+*.pkl
+*.pickle
+*.h5
+*.ckpt
+*.log
+
+# Specific backend model files
+backend/route_on_time_model.joblib
+backend/feature_cols.joblib
+backend/route_on_time_model.json
+
+# Throwaway / backup files
+backend/oombined_router.py
+
+########################
+# Node / React (frontend)
+########################
+node_modules/
+frontend/node_modules/
+frontend/build/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.production.local
+frontend/.env.test.local
+
+########################
+# Caches / misc
+########################
+.cache/
+.pytest_cache/
