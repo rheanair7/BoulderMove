@@ -7,7 +7,12 @@ This repository contains:
 - `frontend/` — React UI + Google Maps  
 
 ---
+# Demo
 
+[![Watch the BoulderMove Demo](https://img.youtube.com/vi/fTusDKHIp4w/0.jpg)](https://youtu.be/fTusDKHIp4w)
+
+Click the image above to watch how BoulderMove Works!
+---
 # 1. Prerequisites
 
 ## Local Requirements
