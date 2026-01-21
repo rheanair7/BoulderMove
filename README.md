@@ -7,9 +7,15 @@ This repository contains:
 - `frontend/` — React UI + Google Maps  
 
 ---
+## What BoulderMove Looks Like
+
+Below is the main BoulderMove dashboard, showing multimodal routing, live weather alerts, and event awareness in a single view.
+
+![BoulderMove Smart Trip Dashboard](assets/bouldermove-dashboard.jpg)
+---
 # Demo
 
-[![Watch the BoulderMove Demo](https://img.youtube.com/vi/fTusDKHIp4w/0.jpg)](https://youtu.be/fTusDKHIp4w)
+[![Watch the BoulderMove Demo](https://img.youtube.com/vi/fTusDKHIp4w/0.jpg)](https://youtu.be/fTusDKHIp4w?t=294)
 
 ---
 # 1. Prerequisites
