@@ -11,7 +11,7 @@ This repository contains:
 
 Below is the main BoulderMove dashboard, showing multimodal routing, live weather alerts, and event awareness in a single view.
 
-![BoulderMove Smart Trip Dashboard](assets/bouldermove-dashboard.jpg)
+![BoulderMove Smart Trip Dashboard](Frontend/bouldermove.jpg)
 ---
 # Demo
 
