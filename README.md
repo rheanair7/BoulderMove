@@ -18,6 +18,9 @@ Below is the main BoulderMove dashboard, showing multimodal routing, live weathe
 [![Watch the BoulderMove Demo](https://img.youtube.com/vi/fTusDKHIp4w/0.jpg)](https://youtu.be/fTusDKHIp4w?t=294)
 
 ---
+System Architecture
+![BoulderMove System design](frontend/architecture_boulderMove.jpeg)
+---
 # 1. Prerequisites
 
 ## Local Requirements
