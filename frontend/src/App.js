@@ -10,6 +10,7 @@ import { Autocomplete } from "@react-google-maps/api";
 import polyline from "@mapbox/polyline";
 import "./App.css";
 
+// eslint-disable-next-line no-unused-vars
 function makeFakeRoute(origin, destination) {
   const points = [];
 
@@ -43,7 +44,7 @@ function makeFakeRoute(origin, destination) {
 async function scoreRouteML(routeFeatures) {
   try {
     const res = await fetch(
-      "https://bouldermove-ml-499631536778.us-central1.run.app/score_route",
+      "https://bouldermove-ml-862318684347.us-central1.run.app/score_route",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -218,6 +219,8 @@ export default function App() {
   const destAutoRef = useRef(null);
   const stopsAutoRef = useRef(null);
 
+  const [loading, setLoading] = useState(false);
+  const [sortBy, setSortBy] = useState(null);
   const clearOldRoute = () => setRoutes([]);
 
   /* Load Google Maps API */
@@ -232,6 +235,7 @@ export default function App() {
     if (!place) return;
 
     if (place.formatted_address) setOrigin(place.formatted_address);
+    setRoutes([]);
 
     if (place.geometry?.location) {
       const loc = place.geometry.location;
@@ -244,6 +248,7 @@ export default function App() {
     if (!place) return;
 
     if (place.formatted_address) setDestination(place.formatted_address);
+    setRoutes([]);
 
     if (place.geometry?.location) {
       const loc = place.geometry.location;
@@ -277,6 +282,7 @@ const fetchGoogleRoute = useCallback(async () => {
     destination: `${destinationCoords.lat},${destinationCoords.lon}`,
     mode,
     alternatives: showAlternatives ? "true" : "false",
+    ...(stops.trim() ? { waypoints: stops.trim() } : {}),
   });
 
   try {
@@ -297,43 +303,32 @@ const fetchGoogleRoute = useCallback(async () => {
         .map(([lat, lng]) => ({ lat, lng }));
       
 
+    // intermediate waypoint locations from legs (all legs except the last)
+    const waypointLocs = route.legs.slice(0, -1).map((l) => ({
+      lat: l.end_location.lat,
+      lng: l.end_location.lng,
+    }));
+
     return {
         summary: route.summary || `${mode} route`,
         duration_min: leg.duration?.value / 60 || null,
         distance_km: leg.distance?.value / 1000 || null,
         polylineCoords: pts,
 
-        // ⭐ FIXED (MARKERS WILL SHOW)
-        start_location: {
-        lat: data.origin_lat,
-        lng: data.origin_lon,
-        },
-        end_location: {
-        lat: data.destination_lat,
-        lng: data.destination_lon,
-        },
+        start_location: { lat: data.origin_lat, lng: data.origin_lon },
+        end_location:   { lat: data.destination_lat, lng: data.destination_lon },
+        waypoint_locations: waypointLocs,
 
-        // ⭐ FIXED (WEATHER WILL SHOW)
         weather: data.weather || null,
-
-        // ⭐ FIXED (WEATHER ALERTS WILL SHOW)
         alerts: { custom_alerts: data.weather?.custom_alerts || [] },
-
-        // ⭐ FIXED (EVENTS WILL SHOW)
         events_nearby: data.events_nearby || [],
-        on_time_probability: null,
-        on_time: null,
-
+        stops: data.waypoint_names || [],
+        on_time_probability: data.on_time_probability ?? null,
+        expected_delay_min: data.expected_delay_min ?? null,
+        ml_features_used: data.ml_features_used ?? null,
     };
     });
 
-  for (let r of mappedRoutes) {
-      const features = buildMLFeatures(r, r.weather);
-      const ml = await scoreRouteML(features);
-
-      r.on_time_probability = ml.prob_on_time;
-      r.expected_delay_min = ml.expected_delay_min;
-}
     setRoutes(mappedRoutes);
   } catch (err) {
     console.error("Proxy google_directions fetch failed:", err);
@@ -401,14 +396,15 @@ const fetchGoogleRoute = useCallback(async () => {
           lng: body.destination.lon,
         },
         stops:
-          data.transit?.legs?.flatMap((l) => l.intermediate_stops || []) || [],
+          data.transit?.legs?.flatMap((l) => l.stop_names || l.intermediate_stops || []) || [],
         weather: data.weather || null,
         alerts: { custom_alerts: data.weather?.custom_alerts || [] },
         events_nearby: data.events_nearby || [],
         transit_raw: data,
         on_time_probability: data.on_time_probability,
+        expected_delay_min: data.expected_delay_min,
+        ml_features_used: data.ml_features_used ?? null,
         on_time: data.on_time,
-
       };
 
       setRoutes([routeObj]);
@@ -417,23 +413,41 @@ const fetchGoogleRoute = useCallback(async () => {
     }
   }, [mode, originCoords, destinationCoords]);
 
-  /* Auto-run when mode/coords change */
-  useEffect(() => {
+  /* Manual plan trigger */
+  const handlePlanTrip = async () => {
     if (!originCoords || !destinationCoords) return;
-
-    console.log("DEBUG: mode =", mode);
-    console.log("DEBUG: originCoords =", originCoords);
-    console.log("DEBUG: destinationCoords =", destinationCoords);
-
-    if (mode === "transit") {
-      fetchTransitRoute();
-    } else {
-      fetchGoogleRoute();
+    setRoutes([]);
+    setSortBy(null);
+    setLoading(true);
+    try {
+      if (mode === "transit") {
+        await fetchTransitRoute();
+      } else {
+        await fetchGoogleRoute();
+      }
+    } finally {
+      setLoading(false);
     }
-  }, [mode, originCoords, destinationCoords, fetchGoogleRoute, fetchTransitRoute]);
+  };
+
+  /* -------- Sort routes by selected filter -------- */
+  const sortedRoutes = [...routes].sort((a, b) => {
+    if (sortBy === "ontime") {
+      return (b.on_time_probability ?? 0) - (a.on_time_probability ?? 0);
+    }
+    if (sortBy === "shortest") {
+      return (a.duration_min ?? 0) - (b.duration_min ?? 0);
+    }
+    if (sortBy === "transfers") {
+      const aT = a.transit_raw?.transit ? Math.max(0, a.transit_raw.transit.length - 1) : 0;
+      const bT = b.transit_raw?.transit ? Math.max(0, b.transit_raw.transit.length - 1) : 0;
+      return aT - bT;
+    }
+    return 0;
+  });
 
   /* -------- Decode Polylines or use custom coords -------- */
-  const decodedRoutes = routes.map((r) => {
+  const decodedRoutes = sortedRoutes.map((r) => {
     if (r.polylineCoords && r.polylineCoords.length > 0) {
       return r.polylineCoords;
     }
@@ -445,15 +459,17 @@ const fetchGoogleRoute = useCallback(async () => {
 
   /* -------- Build route markers -------- */
   const buildMarkers = () => {
-    if (routes.length === 0) return [];
+    if (sortedRoutes.length === 0) return [];
 
-    const r = routes[0];
+    const r = sortedRoutes[0];
     const markers = [];
 
-    if (r.start_location) markers.push({ position: r.start_location });
+    if (r.start_location) markers.push({ position: r.start_location, type: "endpoint" });
     if (r.waypoint_locations)
-      r.waypoint_locations.forEach((wp) => markers.push({ position: wp }));
-    if (r.end_location) markers.push({ position: r.end_location });
+      r.waypoint_locations.forEach((wp, i) =>
+        markers.push({ position: wp, type: "stop", label: String(i + 1) })
+      );
+    if (r.end_location) markers.push({ position: r.end_location, type: "endpoint" });
 
     return markers;
   };
@@ -672,7 +688,7 @@ const fetchGoogleRoute = useCallback(async () => {
               >
                 <input
                   value={origin}
-                  onChange={(e) => setOrigin(e.target.value)}
+                  onChange={(e) => { setOrigin(e.target.value); setRoutes([]); setOriginCoords(null); }}
                   placeholder="Origin"
                   style={inputStyle(darkMode)}
                 />
@@ -698,7 +714,7 @@ const fetchGoogleRoute = useCallback(async () => {
               >
                 <input
                   value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
+                  onChange={(e) => { setDestination(e.target.value); setRoutes([]); setDestinationCoords(null); }}
                   placeholder="Destination"
                   style={inputStyle(darkMode)}
                 />
@@ -751,6 +767,29 @@ const fetchGoogleRoute = useCallback(async () => {
                   ? "Hide today’s weather"
                   : "Show today’s weather"}
               </button>
+
+              {/* PLAN TRIP BUTTON */}
+              <button
+                onClick={handlePlanTrip}
+                disabled={loading || !originCoords || !destinationCoords}
+                style={{
+                  marginTop: "8px",
+                  padding: "12px",
+                  borderRadius: "10px",
+                  border: "none",
+                  background: loading || !originCoords || !destinationCoords
+                    ? "#9ca3af"
+                    : "linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)",
+                  color: "white",
+                  fontWeight: 700,
+                  fontSize: 15,
+                  cursor: loading || !originCoords || !destinationCoords ? "not-allowed" : "pointer",
+                  boxShadow: "0 4px 14px rgba(37,99,235,0.35)",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {loading ? "Planning..." : "Plan Trip"}
+              </button>
             </div>
           </section>
 
@@ -787,13 +826,37 @@ const fetchGoogleRoute = useCallback(async () => {
                   ))}
 
                   {/* MARKERS */}
-                  {buildMarkers().map((m, index) => (
-                    <Marker
-                      key={index}
-                      position={m.position}
-                      label={String.fromCharCode(65 + index)}
-                    />
-                  ))}
+                  {(() => {
+                    const allMarkers = buildMarkers();
+                    let endpointCount = 0;
+                    return allMarkers.map((m, index) => {
+                      if (m.type === "stop") {
+                        return (
+                          <Marker
+                            key={index}
+                            position={m.position}
+                            label={{ text: m.label, color: "white", fontWeight: "bold" }}
+                            icon={{
+                              path: window.google.maps.SymbolPath.CIRCLE,
+                              scale: 10,
+                              fillColor: "#f97316",
+                              fillOpacity: 1,
+                              strokeColor: "white",
+                              strokeWeight: 2,
+                            }}
+                          />
+                        );
+                      }
+                      const letter = String.fromCharCode(65 + endpointCount++);
+                      return (
+                        <Marker
+                          key={index}
+                          position={m.position}
+                          label={letter}
+                        />
+                      );
+                    });
+                  })()}
                 </GoogleMap>
               ) : (
                 <div style={{ textAlign: "center", padding: "200px 0" }}>
@@ -815,24 +878,42 @@ const fetchGoogleRoute = useCallback(async () => {
               Route options
             </h2>
 
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <button style={chipStyle(darkMode)}>Best on-time</button>
-              <button style={chipStyle(darkMode)}>Shortest</button>
-              <button style={chipStyle(darkMode)}>Fewest transfers</button>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+              {[
+                { key: "ontime", label: "Best on-time" },
+                { key: "shortest", label: "Shortest" },
+                ...(mode === "transit" ? [{ key: "transfers", label: "Fewest transfers" }] : []),
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setSortBy(sortBy === key ? null : key)}
+                  style={{
+                    ...chipStyle(darkMode),
+                    background: sortBy === key
+                      ? "linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)"
+                      : darkMode ? "#1f2937" : "white",
+                    color: sortBy === key ? "white" : darkMode ? "#e5e7eb" : "#111827",
+                    border: sortBy === key ? "1px solid #2563eb" : chipStyle(darkMode).border,
+                    fontWeight: sortBy === key ? 600 : 400,
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             {/* ROUTE LIST */}
-            {routes.length === 0 ? (
+            {sortedRoutes.length === 0 ? (
               <div
                 style={{
                   fontSize: 13,
                   color: darkMode ? "#9ca3af" : "#777",
                 }}
               >
-                Enter origin and destination to see route suggestions.
+                Enter origin and destination, then click Plan Trip.
               </div>
             ) : (
-              routes.map((r, i) => (
+              sortedRoutes.map((r, i) => (
                 <RouteCard
                   key={i}
                   route={r}
@@ -840,6 +921,7 @@ const fetchGoogleRoute = useCallback(async () => {
                   mode={mode}
                   showWeatherDetails={showWeatherDetails}
                   darkMode={darkMode}
+                  allRoutes={sortedRoutes}
                 />
               ))
             )}
@@ -871,12 +953,145 @@ const fetchGoogleRoute = useCallback(async () => {
 }
 
 /* -------------------------------------------------------------------------- */
+/* ScoreBreakdown — explainable ML panel                                      */
+/* -------------------------------------------------------------------------- */
+function ScoreBreakdown({ probability, features, darkMode }) {
+  const [expanded, setExpanded] = React.useState(false);
+
+  if (!features) return null;
+
+  const pct = (probability * 100).toFixed(1);
+  const scoreColor = probability >= 0.75 ? "#16a34a" : probability >= 0.5 ? "#eab308" : "#dc2626";
+  const scoreLabel = probability >= 0.75 ? "Likely On Time" : probability >= 0.5 ? "Possibly Delayed" : "High Delay Risk";
+
+  // Compute each factor's contribution (mirrors synthetic training formula)
+  const factors = [];
+
+  const durationPenalty = Math.max(0, (features.duration_min - 30)) * 0.6;
+  if (durationPenalty > 0)
+    factors.push({ label: `Long trip (${Math.round(features.duration_min)} min)`, delta: -durationPenalty });
+
+  if (features.num_transfers > 0)
+    factors.push({ label: `${features.num_transfers} transfer${features.num_transfers > 1 ? "s" : ""}`, delta: -(features.num_transfers * 6) });
+
+  if (features.rain_1h > 0)
+    factors.push({ label: features.rain_1h >= 2 ? "Heavy rain" : "Light rain", delta: -5 });
+
+  if (features.snow_1h > 0)
+    factors.push({ label: "Snow on route", delta: -12 });
+
+  if (features.wind_speed >= 10)
+    factors.push({ label: `Strong winds (${features.wind_speed.toFixed(0)} m/s)`, delta: -4 });
+
+  if (features.event_risk > 0)
+    factors.push({ label: "Events nearby (crowd risk)", delta: -25 });
+
+  const tempPenalty = Math.abs(features.temp - 20) / 40 * 10;
+  if (tempPenalty > 1)
+    factors.push({ label: `Temp far from ideal (${Math.round(features.temp)}°C)`, delta: -parseFloat(tempPenalty.toFixed(1)) });
+
+  if (features.hour >= 16 && features.hour <= 19)
+    factors.push({ label: `Rush hour (${features.hour}:00)`, delta: -8 });
+
+  if (features.is_weekend)
+    factors.push({ label: "Weekend (lighter traffic)", delta: +3 });
+
+  const bg = darkMode ? "#0f172a" : "#eef6ff";
+  const border = darkMode ? "#1d4ed8" : "#bcd2ff";
+  const textMuted = darkMode ? "#9ca3af" : "#6b7280";
+
+  return (
+    <div style={{ marginTop: 6, borderRadius: 8, border: `1px solid ${border}`, background: bg, overflow: "hidden" }}>
+      {/* Header row */}
+      <div
+        style={{ padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+        onClick={() => setExpanded(e => !e)}
+      >
+        <span style={{ fontSize: 14 }}>
+          <strong>On-time probability:</strong>{" "}
+          <span style={{ color: scoreColor, fontWeight: 700 }}>{pct}%</span>
+        </span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{
+            padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600,
+            color: "white", background: scoreColor,
+          }}>
+            {scoreLabel}
+          </span>
+          <span style={{ fontSize: 11, color: textMuted }}>{expanded ? "▲ hide" : "▼ why?"}</span>
+        </div>
+      </div>
+
+      {/* Breakdown rows */}
+      {expanded && (
+        <div style={{ borderTop: `1px solid ${border}`, padding: "8px 12px" }}>
+          {/* Bar */}
+          <div style={{ height: 6, borderRadius: 999, background: darkMode ? "#1e293b" : "#dbeafe", marginBottom: 10, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${pct}%`, background: scoreColor, borderRadius: 999, transition: "width 0.4s ease" }} />
+          </div>
+
+          {/* Base */}
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+            <span style={{ color: textMuted }}>Base score</span>
+            <span style={{ color: "#16a34a", fontWeight: 600 }}>+90%</span>
+          </div>
+
+          {/* Factor rows */}
+          {factors.length === 0 ? (
+            <div style={{ fontSize: 12, color: textMuted }}>No negative factors — ideal conditions!</div>
+          ) : (
+            factors.map((f, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                <span style={{ color: textMuted }}>{f.label}</span>
+                <span style={{ color: f.delta < 0 ? "#dc2626" : "#16a34a", fontWeight: 600 }}>
+                  {f.delta > 0 ? "+" : ""}{f.delta.toFixed(0)}%
+                </span>
+              </div>
+            ))
+          )}
+
+          {/* Divider + final */}
+          <div style={{ borderTop: `1px dashed ${border}`, marginTop: 6, paddingTop: 6, display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700 }}>
+            <span>Estimated on-time</span>
+            <span style={{ color: scoreColor }}>{pct}%</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* RouteCard */
 /* -------------------------------------------------------------------------- */
-function RouteCard({ route, index, mode, showWeatherDetails, darkMode }) {
+function RouteCard({ route, index, mode, showWeatherDetails, darkMode, allRoutes = [] }) {
   const label = String.fromCharCode(65 + index);
   const color = ["#4285F4", "#FF6347", "#2ECC71", "#8E44AD"][index % 4];
   const [expandEvents, setExpandEvents] = useState(false);
+
+  // --- Compute badges ---
+  const badges = [];
+  if (allRoutes.length > 0) {
+    const bestOnTime = allRoutes.reduce((best, r) =>
+      (r.on_time_probability ?? 0) > (best.on_time_probability ?? 0) ? r : best, allRoutes[0]);
+    const shortest = allRoutes.reduce((best, r) =>
+      (r.duration_min ?? Infinity) < (best.duration_min ?? Infinity) ? r : best, allRoutes[0]);
+
+    if (route === bestOnTime && route.on_time_probability != null)
+      badges.push({ label: "Best on-time", color: "#16a34a", bg: "#dcfce7" });
+    if (route === shortest)
+      badges.push({ label: "Shortest", color: "#d97706", bg: "#fef3c7" });
+
+    if (mode === "transit") {
+      const fewestTransfers = allRoutes.reduce((best, r) => {
+        const t = r.transit_raw?.transit ? Math.max(0, r.transit_raw.transit.length - 1) : 0;
+        const bestT = best.transit_raw?.transit ? Math.max(0, best.transit_raw.transit.length - 1) : 0;
+        return t < bestT ? r : best;
+      }, allRoutes[0]);
+      if (route === fewestTransfers)
+        badges.push({ label: "Fewest transfers", color: "#7c3aed", bg: "#ede9fe" });
+    }
+  }
 
   // weather icon
   let icon = "🌤️";
@@ -931,58 +1146,47 @@ function RouteCard({ route, index, mode, showWeatherDetails, darkMode }) {
         </b>
       </div>
 
-      <div>
-        {route.duration_min} min • {route.distance_km} km
-      </div>
-      
-            {/* ---------------- ML ON-TIME PREDICTION ---------------- */}
-      {route.on_time_probability !== undefined && route.on_time_probability !== null && (
-        <div
-          style={{
-            marginTop: "6px",
-            padding: "8px 12px",
-            borderRadius: "8px",
-            background: darkMode ? "#0f172a" : "#eef6ff",
-            border: `1px solid ${darkMode ? "#1d4ed8" : "#bcd2ff"}`,
-            fontSize: "14px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <span>
-            <strong>On-time probability:</strong>{" "}
-            {(route.on_time_probability * 100).toFixed(1)}%
-          </span>
-
-          <span
-            style={{
-              padding: "4px 10px",
-              borderRadius: "999px",
-              fontSize: "12px",
-              fontWeight: 600,
-              color: "white",
-              background:
-                route.on_time_probability >= 0.75
-                  ? "#16a34a" /* green */
-                  : route.on_time_probability >= 0.5
-                  ? "#eab308" /* yellow */
-                  : "#dc2626", /* red */
-            }}
-          >
-            {route.on_time_probability >= 0.75
-              ? "Likely On Time"
-              : route.on_time_probability >= 0.5
-              ? "Possibly Delayed"
-              : "High Delay Risk"}
-          </span>
+      {/* Badges */}
+      {badges.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+          {badges.map((b) => (
+            <span
+              key={b.label}
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "2px 8px",
+                borderRadius: 999,
+                background: b.bg,
+                color: b.color,
+                border: `1px solid ${b.color}`,
+              }}
+            >
+              {b.label}
+            </span>
+          ))}
         </div>
       )}
 
-
-      <div style={{ color: textMuted }}>
-        Stops: {route.stops?.join(" → ") || "None"}
+      <div>
+        {Math.round(route.duration_min)} min • {route.distance_km ? (route.distance_km * 0.621371).toFixed(1) + " mi" : "—"}
       </div>
+      
+      {/* ---------------- ML ON-TIME PREDICTION + BREAKDOWN ---------------- */}
+      {route.on_time_probability != null && (
+        <ScoreBreakdown
+          probability={route.on_time_probability}
+          features={route.ml_features_used}
+          darkMode={darkMode}
+        />
+      )}
+
+
+      {route.stops?.length > 0 && (
+        <div style={{ color: textMuted, marginTop: 4 }}>
+          <b>Stops:</b> {route.stops.join(" → ")}
+        </div>
+      )}
 
       <div style={{ color: textMuted }}>Mode: {mode}</div>
 

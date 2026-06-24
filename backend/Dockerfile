@@ -18,20 +18,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend code (exclude large data if possible)
+# Copy backend code and pre-built data files
 COPY . .
 
-# Precompute graph + stops at build time
-RUN python build_network.py
-
-# Cloud Run will inject PORT; default to 8080 for local dev
 ENV PORT=8080
-
-EXPOSE 8080
-
-# Use exec form with uvicorn and ${PORT:-8080} fallback
-ENV PORT=8080
-
 EXPOSE 8080
 
 CMD ["sh", "-c", "uvicorn combined_router:app --host 0.0.0.0 --port ${PORT}"]

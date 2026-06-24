@@ -7,3 +7,8 @@ __pycache__/
 *.gitignore
 *.env
 *.DS_Store
+venv/
+retrain_model_local.py
+route_on_time_model.json
+route_on_time_model.joblib
+feature_cols.joblib

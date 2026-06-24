@@ -90,6 +90,8 @@ def fetch_cu():
         events = []
 
         for e in data.get("events", []):
+            if not isinstance(e, dict):
+                continue
             ev = e.get("event", {})
             loc = ev.get("location", {})
 

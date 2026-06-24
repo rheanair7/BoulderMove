@@ -8,3 +8,5 @@ numpy
 pandas
 shapely
 osmnx
+polyline
+geopy

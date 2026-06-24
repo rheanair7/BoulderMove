@@ -39,7 +39,7 @@ graph_crs = None
 raptor = None
 
 # ------------------------------- ML API -----------------------------------
-ML_URL = "https://bouldermove-ml-499631536778.us-central1.run.app/score_route"
+ML_URL = "https://bouldermove-ml-862318684347.us-central1.run.app/score_route"
 
 
 def score_route(features: dict):
@@ -227,7 +227,7 @@ def plan_transit_full(req: PlanTransitRequest):
         snow_1h = weather.get("snow_1h", 0) if weather else 0
         wind_speed = weather.get("wind_speed", 0) if weather else 0
         temp = weather.get("temp", 0) if weather else 0
-        event_risk = 1.0 if events else 0.0
+        event_risk = 1.0 if events.get("count", 0) > 0 else 0.0
 
         hour = datetime.now().hour
         is_weekend = datetime.now().weekday() >= 5
@@ -263,9 +263,11 @@ def plan_transit_full(req: PlanTransitRequest):
         }
 
     # ----------------- NORMAL RAPTOR FLOW --------------------------
-    # RAPTOR geometry (stops along the route)
+    # RAPTOR geometry (stops along the route) + enrich legs with stop names
     transit_geometry = []
+    stop_name_map = dict(zip(stops_gdf["stop_id"].astype(str), stops_gdf["stop_name"]))
     for leg in transit_legs:
+        leg["stop_names"] = [stop_name_map.get(sid, sid) for sid in leg["intermediate_stops"]]
         for sid in leg["intermediate_stops"]:
             row = stops_gdf.loc[stops_gdf["stop_id"] == sid].iloc[0]
             transit_geometry.append(
@@ -284,7 +286,11 @@ def plan_transit_full(req: PlanTransitRequest):
     print("[DEBUG] walk3_latlon points:", len(walk3_latlon))
 
     # WEATHER + EVENTS (now that geometry exists)
-    weather = format_weather(get_weather_and_alerts(req.origin.lat, req.origin.lon))
+    try:
+        weather = format_weather(get_weather_and_alerts(req.origin.lat, req.origin.lon))
+    except Exception as e:
+        print(f"[WEATHER SKIPPED] {e}")
+        weather = None
     full_geometry = walk1_latlon + transit_geometry + walk3_latlon
     print("[DEBUG] full_geometry points:", len(full_geometry))
 
@@ -299,7 +305,7 @@ def plan_transit_full(req: PlanTransitRequest):
     snow_1h = weather.get("snow_1h", 0) if weather else 0
     wind_speed = weather.get("wind_speed", 0) if weather else 0
     temp = weather.get("temp", 0) if weather else 0
-    event_risk = 1.0 if len(events) > 0 else 0.0
+    event_risk = 1.0 if events.get("count", 0) > 0 else 0.0
 
     hour = datetime.now().hour
     is_weekend = datetime.now().weekday() >= 5
@@ -339,7 +345,8 @@ def plan_transit_full(req: PlanTransitRequest):
 # ------------------------- GOOGLE DIRECTIONS PROXY ------------------------
 @app.get("/google_directions")
 def google_directions_proxy(
-    origin: str, destination: str, mode: str = "driving", alternatives: str = "false"
+    origin: str, destination: str, mode: str = "driving", alternatives: str = "false",
+    waypoints: str = ""
 ):
     api_key = os.getenv("GOOGLE_MAPS_API_KEY")
     if not api_key:
@@ -354,6 +361,9 @@ def google_directions_proxy(
         "alternatives": alternatives,
         "key": api_key,
     }
+    if waypoints:
+        stops_list = [s.strip() for s in waypoints.split(";") if s.strip()]
+        params["waypoints"] = "|".join(stops_list)
 
     r = requests.get(url, params=params)
     data = r.json()
@@ -370,8 +380,12 @@ def google_directions_proxy(
     dest_lat, dest_lon = map(float, destination.split(","))
 
     # --- Weather ---
-    raw_weather = get_weather_and_alerts(origin_lat, origin_lon)
-    weather = format_weather(raw_weather)
+    try:
+        raw_weather = get_weather_and_alerts(origin_lat, origin_lon)
+        weather = format_weather(raw_weather)
+    except Exception as e:
+        print(f"[WEATHER SKIPPED] {e}")
+        weather = None
 
     # --- Events along route ---
     events = events_near_route([(p["lat"], p["lon"]) for p in geometry])
@@ -384,7 +398,7 @@ def google_directions_proxy(
     snow_1h = weather.get("snow_1h", 0) if weather else 0
     wind_speed = weather.get("wind_speed", 0) if weather else 0
     temp = weather.get("temp", 0) if weather else 0
-    event_risk = 1.0 if len(events) > 0 else 0.0
+    event_risk = 1.0 if events.get("count", 0) > 0 else 0.0
 
     features = {
         "duration_min": float(duration_min),
@@ -401,6 +415,11 @@ def google_directions_proxy(
 
     ml_out = score_route(features)
 
+    # --- Extract waypoint stop names from legs ---
+    waypoint_names = []
+    for leg in data["routes"][0].get("legs", [])[:-1]:
+        waypoint_names.append(leg.get("end_address", ""))
+
     return {
         "status": "OK",
         "geometry": geometry,
@@ -409,6 +428,7 @@ def google_directions_proxy(
         "origin_lon": origin_lon,
         "destination_lat": dest_lat,
         "destination_lon": dest_lon,
+        "waypoint_names": waypoint_names,
         "weather": weather,
         "events_nearby": events,
         "on_time_probability": ml_out.get("prob_on_time"),

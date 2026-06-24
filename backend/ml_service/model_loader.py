@@ -5,7 +5,7 @@ from google.cloud import storage
 from joblib import load
 from xgboost import Booster
 
-BUCKET_NAME = "bouldermove-ml-artifacts"
+BUCKET_NAME = "bouldermove-ml-lane-detection"
 MODEL_JSON_PATH = "models/route_on_time_model.json"
 FEATURE_COLS_PATH = "models/feature_cols.joblib"
 
