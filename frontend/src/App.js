@@ -41,39 +41,6 @@ function makeFakeRoute(origin, destination) {
   return points;
 }
  
-async function scoreRouteML(routeFeatures) {
-  try {
-    const res = await fetch(
-      "https://bouldermove-ml-862318684347.us-central1.run.app/score_route",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(routeFeatures),
-      }
-    );
-
-    if (!res.ok) throw new Error("ML scoring failed");
-
-    return await res.json();
-  } catch (err) {
-    console.error("ML error:", err);
-    return { prob_on_time: null, expected_delay_min: null };
-  }
-}
-function buildMLFeatures(route, weather) {
-  return {
-    duration_min: route.duration_min ?? 0,
-    buffer_min: 5, // constant buffer for now, or make UI-input later
-    num_transfers: 0, // non-transit routes have no transfers
-    rain_1h: weather?.rain_1h ?? 0,
-    snow_1h: weather?.snow_1h ?? 0,
-    wind_speed: weather?.wind_speed ?? 0,
-    temp: weather?.temp ?? 0,
-    event_risk: route.events_nearby?.length > 0 ? 1.0 : 0.0,
-    hour: new Date().getHours(),
-    is_weekend: [0,6].includes(new Date().getDay()),
-  };
-}
 
 const GOOGLE_MAP_LIBRARIES = ["places"];
 
@@ -333,7 +300,7 @@ const fetchGoogleRoute = useCallback(async () => {
   } catch (err) {
     console.error("Proxy google_directions fetch failed:", err);
   }
-}, [originCoords, destinationCoords, mode, showAlternatives]);
+}, [originCoords, destinationCoords, mode, showAlternatives, stops]);
              
   /* ---------------- TRANSIT BACKEND REQUEST ---------------- */
   const fetchTransitRoute = useCallback(async () => {
