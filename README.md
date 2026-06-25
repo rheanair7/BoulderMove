@@ -12,12 +12,12 @@ BoulderMove is a full-stack trip planning app for Boulder, CO that combines real
 
 Most routing apps just find the fastest path. BoulderMove layers on:
 
-- **Custom RAPTOR transit engine** — implements the RAPTOR algorithm from scratch over RTD + Bustang GTFS feeds, 790k+ rows of stop times
-- **Walk graph routing** — OSMnx-built pedestrian graph (38MB) with NetworkX shortest-path for walk-to-stop and stop-to-destination legs
-- **XGBoost on-time prediction** — ML model trained on 6,000 synthetic trips using weather, transfer count, trip duration, time of day, and event proximity as features
-- **Explainable ML breakdown** — each factor's penalty is shown to the user (rush hour −8%, snow −12%, etc.), mirroring the training formula
-- **Live context** — OpenWeather API for current conditions, Ticketmaster + CU Boulder Calendar for nearby events
-- **Google Transit fallback** — if RAPTOR finds no journey, the backend falls back to Google Directions API silently
+- **Custom RAPTOR transit engine**: implements the RAPTOR algorithm from scratch over RTD + Bustang GTFS feeds, 790k+ rows of stop times
+- **Walk graph routing**: OSMnx-built pedestrian graph (38MB) with NetworkX shortest-path for walk-to-stop and stop-to-destination legs
+- **XGBoost on-time prediction**: ML model trained on 6,000 synthetic trips using weather, transfer count, trip duration, time of day, and event proximity as features
+- **Explainable ML breakdown**: each factor's penalty is shown to the user (rush hour −8%, snow −12%, etc.), mirroring the training formula
+- **Live context**: OpenWeather API for current conditions, Ticketmaster + CU Boulder Calendar for nearby events
+- **Google Transit fallback**: if RAPTOR finds no journey, the backend falls back to Google Directions API silently
 
 ---
 
@@ -54,76 +54,22 @@ Most routing apps just find the fastest path. BoulderMove layers on:
 
 ---
 
-## Architecture Decisions Worth Talking About
+## Design Decisions
 
-**Why RAPTOR instead of just using Google Transit?**  
-Google Transit doesn't expose raw stop-level data. RAPTOR lets us control the routing logic, support Bustang (regional CO buses), and compute features like transfer count and leg durations that feed into the ML model.
+**Custom RAPTOR over Google Transit** — Google Transit doesn't expose raw stop-level data. RAPTOR gives full control over routing logic, supports Bustang (regional CO buses), and produces transfer count + leg durations as ML features.
 
-**Why XGBoost for on-time prediction?**  
-Gradient boosting handles tabular features (duration, weather, transfers) well without much tuning. The model is trained on 6,000 synthetic trips generated from a formula that encodes real-world delay factors, so the predictions are explainable by design.
+**XGBoost for on-time prediction** — Gradient boosting handles tabular features (duration, weather, transfers) without much tuning. Training on 6,000 synthetic trips with an interpretable formula makes predictions explainable by design.
 
-**Why two Cloud Run services?**  
-Separating the ML microservice from the routing backend means the heavy model (XGBoost + GCS download) starts independently. Both run with `--min-instances 1` to eliminate cold starts during demos.
+**Two separate Cloud Run services** — The ML microservice (XGBoost + GCS model download) is isolated from the routing backend so each can scale and cold-start independently. Both run with `--min-instances 1` to stay warm for demos.
 
 ---
 
-## Run Locally
+## What I'd Do Differently
 
-### Backend
+**GTFS-RT for live bus positions** — Departure times are currently pulled from the static GTFS schedule. Integrating RTD's GTFS Realtime feed would show actual live delays on the map, making the routing truly real-time.
 
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate          # Windows
-pip install -r requirements.txt
-
-# Create backend/.env
-GOOGLE_MAPS_API_KEY=your_key
-OPENWEATHER_API_KEY=your_key
-TICKETMASTER_API_KEY=your_key
-
-uvicorn combined_router:app --host 0.0.0.0 --port 8080
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-
-# Create frontend/.env
-REACT_APP_GOOGLE_MAPS_API_KEY=your_key
-REACT_APP_COMBINED_ROUTER_URL=http://localhost:8080
-
-npm start
-```
+**Persistent trip history** — No database backs the app right now. Adding a lightweight store would allow saving and comparing past trips over time.
 
 ---
 
-## Cloud Deployment
 
-| Service | Platform | URL |
-|---|---|---|
-| Frontend | Vercel | auto-deployed on push to `main` |
-| Backend API | Google Cloud Run | `bouldermove-backend-*.us-central1.run.app` |
-| ML microservice | Google Cloud Run | `bouldermove-ml-*.us-central1.run.app` |
-| Model artifacts | Google Cloud Storage | `gs://bouldermove-ml-lane-detection/` |
-
----
-
-## Repo Structure
-
-```
-BoulderMove/
-├── backend/
-│   ├── combined_router.py     # FastAPI app — routing + weather + events + ML
-│   ├── raptor_engine.py       # Custom RAPTOR transit router
-│   ├── weather_service.py     # OpenWeather integration
-│   ├── events_service.py      # Ticketmaster + CU Calendar
-│   ├── ml_service/            # XGBoost microservice (separate Cloud Run)
-│   ├── data/                  # GTFS feeds + OSMnx walk graph
-│   └── Dockerfile
-└── frontend/
-    ├── src/App.js             # Main React component
-    └── public/
-```
