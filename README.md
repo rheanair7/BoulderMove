@@ -23,37 +23,7 @@ Most routing apps just find the fastest path. BoulderMove layers on:
 
 ## System Architecture
 
-```mermaid
-graph TD
-    User["👤 User (Browser)"]
-    FE["⚛️ React Frontend\nVercel"]
-    BE["🐍 FastAPI Backend\nCloud Run"]
-    RAPTOR["🗺️ RAPTOR Engine\nCustom transit router"]
-    WALK["🚶 Walk Graph\nOSMnx + NetworkX"]
-    GTFS["📦 GTFS Feeds\nRTD + Bustang"]
-    ML["🤖 ML Microservice\nXGBoost · Cloud Run"]
-    GCS["🪣 GCS Bucket\nModel artifacts"]
-    GMAPS["🗺️ Google Maps API\nDirections + Places"]
-    OW["☁️ OpenWeather API"]
-    TM["🎟️ Ticketmaster API"]
-    CU["🏫 CU Boulder Calendar"]
-
-    User -->|"Enter origin/dest"| FE
-    FE -->|"POST /plan_transit_full\nGET /google_directions"| BE
-    BE --> RAPTOR
-    BE --> WALK
-    RAPTOR --> GTFS
-    BE -->|"Fallback"| GMAPS
-    BE --> OW
-    BE --> TM
-    BE --> CU
-    BE -->|"POST /score_route"| ML
-    ML --> GCS
-    BE -->|"Routes + weather\n+ ML score"| FE
-    FE -->|"Render map + cards"| User
-```
-
-> Diagram rendered automatically on GitHub. To view locally, paste into [mermaid.live](https://mermaid.live).
+![BoulderMove System Architecture](frontend/sysdesign.png)
 
 ---
 
