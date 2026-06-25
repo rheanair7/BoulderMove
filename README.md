@@ -1,6 +1,6 @@
 # 🚌 BoulderMove — Smart Multimodal Trip Planner
 
-**Live demo → [bouldermove.vercel.app](https://bouldermove.vercel.app)**
+**Live demo → [bouldermove.vercel.app](https://boulder-move.vercel.app/)**
 
 BoulderMove is a full-stack trip planning app for Boulder, CO that combines real-time transit routing, live weather context, local event awareness, and an XGBoost ML model to predict whether your trip will arrive on time — all in one dashboard.
 
