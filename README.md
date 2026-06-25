@@ -1,331 +1,159 @@
-# BoulderMove   
-BoulderMove is a multimodal trip planner for Boulder that combines **transit routing**, **walking**, **weather analysis**, **event alerts**, and a **machine-learning prediction model** into a single smart UI.
+# 🚌 BoulderMove — Smart Multimodal Trip Planner
 
-This repository contains:
+**Live demo → [bouldermove.vercel.app](https://bouldermove.vercel.app)**
 
-- `backend/` — FastAPI routing API + routing engine + ML training  
-- `frontend/` — React UI + Google Maps  
+BoulderMove is a full-stack trip planning app for Boulder, CO that combines real-time transit routing, live weather context, local event awareness, and an XGBoost ML model to predict whether your trip will arrive on time — all in one dashboard.
 
----
-## What BoulderMove Looks Like
-
-Below is the main BoulderMove dashboard, showing multimodal routing, live weather alerts, and event awareness in a single view.
-
-![BoulderMove Smart Trip Dashboard](frontend/bouldermove.jpeg)
----
-# Demo
-
-[![Watch the BoulderMove Demo](https://img.youtube.com/vi/fTusDKHIp4w/0.jpg)](https://youtu.be/fTusDKHIp4w?t=294)
-
----
-System Architecture
-![BoulderMove System design](frontend/architecture_boulderMove.jpeg)
----
-# 1. Prerequisites
-
-## Local Requirements
-- Python 3.10+
-- Node.js LTS
-- Git
-- Virtualenv or Conda
-
-## Cloud Requirements
-- Compute Engine VM  
-- Cloud SQL (PostgreSQL)  
-- Cloud Storage bucket  
-- Cloud Run (ML service)  
-- Cloud Build + Artifact Registry  
-
-### API Keys Needed
-You must have a Google Maps JavaScript API key with:
-- Maps JavaScript API enabled  
-- Places API enabled  
+![BoulderMove Dashboard](frontend/bouldermove.jpeg)
 
 ---
 
-# 2. Clone the Repository
+## What Makes This Interesting
 
-```bash
-git clone https://github.com/cu-csci-4253-datacenter-fall-2025/final-project-rheanair7.git
-cd main
+Most routing apps just find the fastest path. BoulderMove layers on:
+
+- **Custom RAPTOR transit engine** — implements the RAPTOR algorithm from scratch over RTD + Bustang GTFS feeds, 790k+ rows of stop times
+- **Walk graph routing** — OSMnx-built pedestrian graph (38MB) with NetworkX shortest-path for walk-to-stop and stop-to-destination legs
+- **XGBoost on-time prediction** — ML model trained on 6,000 synthetic trips using weather, transfer count, trip duration, time of day, and event proximity as features
+- **Explainable ML breakdown** — each factor's penalty is shown to the user (rush hour −8%, snow −12%, etc.), mirroring the training formula
+- **Live context** — OpenWeather API for current conditions, Ticketmaster + CU Boulder Calendar for nearby events
+- **Google Transit fallback** — if RAPTOR finds no journey, the backend falls back to Google Directions API silently
+
+---
+
+## System Architecture
+
+```mermaid
+graph TD
+    User["👤 User (Browser)"]
+    FE["⚛️ React Frontend\nVercel"]
+    BE["🐍 FastAPI Backend\nCloud Run"]
+    RAPTOR["🗺️ RAPTOR Engine\nCustom transit router"]
+    WALK["🚶 Walk Graph\nOSMnx + NetworkX"]
+    GTFS["📦 GTFS Feeds\nRTD + Bustang"]
+    ML["🤖 ML Microservice\nXGBoost · Cloud Run"]
+    GCS["🪣 GCS Bucket\nModel artifacts"]
+    GMAPS["🗺️ Google Maps API\nDirections + Places"]
+    OW["☁️ OpenWeather API"]
+    TM["🎟️ Ticketmaster API"]
+    CU["🏫 CU Boulder Calendar"]
+
+    User -->|"Enter origin/dest"| FE
+    FE -->|"POST /plan_transit_full\nGET /google_directions"| BE
+    BE --> RAPTOR
+    BE --> WALK
+    RAPTOR --> GTFS
+    BE -->|"Fallback"| GMAPS
+    BE --> OW
+    BE --> TM
+    BE --> CU
+    BE -->|"POST /score_route"| ML
+    ML --> GCS
+    BE -->|"Routes + weather\n+ ML score"| FE
+    FE -->|"Render map + cards"| User
 ```
 
+> Diagram rendered automatically on GitHub. To view locally, paste into [mermaid.live](https://mermaid.live).
+
 ---
 
-# 3. Backend Setup (FastAPI)
+## Tech Stack
 
-The backend lives in `backend/` and exposes endpoints consumed by the frontend.
+| Layer | Technology |
+|---|---|
+| Frontend | React, @react-google-maps/api, Lottie |
+| Backend | Python, FastAPI, uvicorn |
+| Transit routing | Custom RAPTOR algorithm, GTFS (RTD + Bustang) |
+| Walk routing | OSMnx, NetworkX, GeoPandas |
+| ML model | XGBoost, scikit-learn, trained on synthetic data |
+| Deployment | Google Cloud Run (backend + ML), Vercel (frontend) |
+| Model storage | Google Cloud Storage |
+| APIs | Google Maps (Directions, Places, Maps JS), OpenWeather, Ticketmaster, CU Calendar |
 
-## 3.1 Create and activate a virtual environment
+---
+
+## Key Features
+
+- **Multimodal routing** — driving, walking, cycling, transit (walk → bus → walk)
+- **Sort routes** by best on-time probability, shortest duration, or fewest transfers
+- **On-time prediction** with SHAP-style breakdown of contributing factors
+- **Live weather** with severity-tiered alerts (high / medium / low)
+- **Event awareness** — Ticketmaster + CU Boulder events along the route flagged as crowd risk
+- **Dark mode**
+- **Animated splash screen** with Lottie
+
+---
+
+## Architecture Decisions Worth Talking About
+
+**Why RAPTOR instead of just using Google Transit?**  
+Google Transit doesn't expose raw stop-level data. RAPTOR lets us control the routing logic, support Bustang (regional CO buses), and compute features like transfer count and leg durations that feed into the ML model.
+
+**Why XGBoost for on-time prediction?**  
+Gradient boosting handles tabular features (duration, weather, transfers) well without much tuning. The model is trained on 6,000 synthetic trips generated from a formula that encodes real-world delay factors, so the predictions are explainable by design.
+
+**Why two Cloud Run services?**  
+Separating the ML microservice from the routing backend means the heavy model (XGBoost + GCS download) starts independently. Both run with `--min-instances 1` to eliminate cold starts during demos.
+
+---
+
+## Run Locally
+
+### Backend
 
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate       # Windows: venv\Scripts\activate
-```
-
-## 3.2 Install dependencies
-
-```bash
-pip install --upgrade pip
+venv\Scripts\activate          # Windows
 pip install -r requirements.txt
+
+# Create backend/.env
+GOOGLE_MAPS_API_KEY=your_key
+OPENWEATHER_API_KEY=your_key
+TICKETMASTER_API_KEY=your_key
+
+uvicorn combined_router:app --host 0.0.0.0 --port 8080
 ```
 
-## 3.3 Create backend `.env`
+### Frontend
 
-Create a file: `backend/.env`
-
-```
-GOOGLE_MAPS_API_KEY=YOUR_KEY
-OPENWEATHER_API_KEY=YOUR_KEY
-TICKETMASTER_API_KEY=YOUR_KEY
-
-DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:PORT/DB_NAME
-
-ML_SERVICE_URL=http://localhost:9000/predict
-GTFS_DIR=./data/gtfs
-```
-
-## 3.4 Start backend server
-
-### Development
 ```bash
-uvicorn combined_router:app --reload --host 0.0.0.0 --port 8080
-```
-
-### Production
-```bash
-gunicorn combined_router:app \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:8080
-```
-
-Backend runs at:
-
-```
-http://localhost:8080
-```
-
----
-
-# 4. Frontend Setup (React)
-
-## 4.1 Install dependencies
-```bash
-cd ../frontend
+cd frontend
 npm install
-```
 
-## 4.2 Create frontend `.env`
+# Create frontend/.env
+REACT_APP_GOOGLE_MAPS_API_KEY=your_key
+REACT_APP_COMBINED_ROUTER_URL=http://localhost:8080
 
-Create `frontend/.env`:
-
-```
-REACT_APP_GOOGLE_MAPS_API_KEY=YOUR_KEY
-REACT_APP_BACKBINDED_URL=http://localhost:8080
-```
-
-## 4.3 Run frontend
-
-```bash
 npm start
 ```
 
-Frontend runs at:
-```
-http://localhost:3000
-```
+---
+
+## Cloud Deployment
+
+| Service | Platform | URL |
+|---|---|---|
+| Frontend | Vercel | auto-deployed on push to `main` |
+| Backend API | Google Cloud Run | `bouldermove-backend-*.us-central1.run.app` |
+| ML microservice | Google Cloud Run | `bouldermove-ml-*.us-central1.run.app` |
+| Model artifacts | Google Cloud Storage | `gs://bouldermove-ml-lane-detection/` |
 
 ---
 
-# 5. Using the App
-
-When the frontend loads, you should see:
-
-- A Google Map centered on Boulder  
-- Origin and destination input boxes  
-- A button to plan a trip  
-
-Expected behavior when requesting a route:
-
-- A polyline route is drawn on the map  
-- Walking + transit segments are displayed  
-- Weather + event alerts appear  
-- ML-based on-time arrival probability is shown  
-
----
-
-# 6. Machine Learning Model
-
-ML training scripts are located in:
+## Repo Structure
 
 ```
-backend/train_route_model_from_sql.py  
-backend/train_on_time_model.py
+BoulderMove/
+├── backend/
+│   ├── combined_router.py     # FastAPI app — routing + weather + events + ML
+│   ├── raptor_engine.py       # Custom RAPTOR transit router
+│   ├── weather_service.py     # OpenWeather integration
+│   ├── events_service.py      # Ticketmaster + CU Calendar
+│   ├── ml_service/            # XGBoost microservice (separate Cloud Run)
+│   ├── data/                  # GTFS feeds + OSMnx walk graph
+│   └── Dockerfile
+└── frontend/
+    ├── src/App.js             # Main React component
+    └── public/
 ```
-
-## Train model locally
-```bash
-cd backend
-source venv/bin/activate
-python train_route_model_from_sql.py
-```
-
-This generates a model file used by the ML microservice.
-
----
-
-# 7. Cloud Deployment
-
-## 7.1 Cloud SQL (PostgreSQL)
-
-Add the following to backend `.env`:
-
-```
-DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@/bouldermove?host=/cloudsql/PROJECT:REGION:INSTANCE
-```
-
-## 7.2 Cloud Storage
-
-Upload files:
-
-```
-GTFS → gs://bouldermove-data/gtfs/
-Models → gs://bouldermove-data/models/
-```
-
-## 7.3 Deploy ML Service (Cloud Run)
-
-### Build image
-```bash
-gcloud builds submit backend/ml_service \
-  --tag gcr.io/PROJECT_ID/bouldermove-ml
-```
-
-### Deploy
-```bash
-gcloud run deploy bouldermove-ml \
-  --image gcr.io/PROJECT_ID/bouldermove-ml \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated
-```
-
-Add to backend `.env`:
-
-```
-ML_SERVICE_URL=https://bouldermove-ml-xxxx.run.app/predict
-```
-
-## 7.4 Deploy Backend to Compute Engine VM
-
-SSH into your VM:
-
-```bash
-sudo apt update
-sudo apt install -y git python3 python3-venv
-git clone https://github.com/<username>/BoulderMove.git
-cd BoulderMove/backend
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-Create service file at:
-
-`/etc/systemd/system/bouldermove.service`
-
-```
-[Unit]
-Description=BoulderMove Backend
-After=network.target
-
-[Service]
-User=USER
-WorkingDirectory=/home/USER/BoulderMove/backend
-Environment="PATH=/home/USER/BoulderMove/backend/venv/bin"
-ExecStart=/home/USER/BoulderMove/backend/venv/bin/gunicorn combined_router:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8080
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start the service:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable bouldermove
-sudo systemctl start bouldermove
-```
-
-## 7.5 Deploy Frontend
-
-Upload the `frontend/build/` folder to your VM and serve using **Nginx**.
-
----
-
-# 8. End-to-End Test
-
-1. Open frontend at **http://localhost:3000**  
-2. Enter origin + destination  
-3. Validate:
-
-- Transit routing path appears  
-- Walking route is drawn  
-- Weather alerts displayed  
-- Event alerts displayed  
-- ML prediction appears  
-
-If debugging:
-
-```bash
-journalctl -u bouldermove -f
-gcloud run logs read bouldermove-ml
-```
-
----
-
-# 9. Troubleshooting
-
-### 9.1 Map not loading
-- Ensure API key is correct  
-- Enable Maps JavaScript and Places API  
-
-### 9.2 CORS Issues
-Ensure backend includes:
-
-```python
-from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
-
-### 9.3 Frontend cannot reach backend
-- Confirm backend is running at http://localhost:8080  
-- Ensure frontend `.env` contains correct backend URL  
-
-### 9.4 Missing GTFS or data files
-- Ensure GTFS is under `backend/data/gtfs/`  
-- Ensure paths in `.env` are correct  
-
----
-
-# 10. Using the App (Summary)
-
-1. Navigate to **http://localhost:3000**  
-2. Enter origin & destination  
-3. Click **Plan Trip**  
-4. View:
-   - Transit + walking route  
-   - Weather + event alerts  
-   - ML prediction score  
-
----
-
