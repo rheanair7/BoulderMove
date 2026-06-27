@@ -347,13 +347,7 @@ const fetchGoogleRoute = useCallback(async () => {
              : "Walk -> Transit  -> Walk",
         duration_min: null,
         distance_km: null,
-        polylineCoords: [
-          ...(data.walk_to_stop || []).map((p) => ({ lat: p.lat, lng: p.lon })),
-          ...(data.walk_to_destination || []).map((p) => ({
-            lat: p.lat,
-            lng: p.lon,
-          })),
-        ],
+        polylineCoords: (data.geometry || []).map((p) => ({ lat: p.lat, lng: p.lon })),
         start_location: {
           lat: body.origin.lat,
           lng: body.origin.lon,
