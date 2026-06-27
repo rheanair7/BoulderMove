@@ -45,7 +45,7 @@ ML_URL = "https://bouldermove-ml-862318684347.us-central1.run.app/score_route"
 def score_route(features: dict):
     try:
         print("➡ ML INPUT:", features)
-        r = requests.post(ML_URL, json=features, timeout=10)
+        r = requests.post(ML_URL, json=features, timeout=30)
         r.raise_for_status()
         out = r.json()
         print("⬅ ML OUTPUT:", out)
