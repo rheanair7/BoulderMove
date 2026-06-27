@@ -340,11 +340,9 @@ const fetchGoogleRoute = useCallback(async () => {
 
       const routeObj = {
         summary:
-          data.transit?.legs?.length > 0
-            ? `Transit via ${
-                data.transit.legs[0].route_id || data.transit.legs[0].trip_id
-              }`
-             : "Walk -> Transit  -> Walk",
+          data.transit?.length > 0
+            ? `Transit via ${data.transit[0].route_id || data.transit[0].trip_id || "Bus"}`
+            : "Walk → Transit → Walk",
         duration_min: null,
         distance_km: null,
         polylineCoords: (data.geometry || []).map((p) => ({ lat: p.lat, lng: p.lon })),

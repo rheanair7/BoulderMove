@@ -227,7 +227,9 @@ def plan_transit_full(req: PlanTransitRequest):
         snow_1h = weather.get("snow_1h", 0) if weather else 0
         wind_speed = weather.get("wind_speed", 0) if weather else 0
         temp = weather.get("temp", 0) if weather else 0
-        event_risk = 1.0 if events.get("count", 0) > 0 else 0.0
+        today_str = datetime.now().date().isoformat()
+        today_events = [e for e in events.get("events", []) if (e.get("date_time") or "").startswith(today_str)]
+        event_risk = 1.0 if len(today_events) > 0 else 0.0
 
         hour = datetime.now().hour
         is_weekend = datetime.now().weekday() >= 5
